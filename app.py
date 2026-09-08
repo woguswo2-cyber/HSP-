@@ -84,7 +84,7 @@ if image_bytes:
                         """
 
                         response = client.models.generate_content(
-    model="models/gemini-2.5-flash",
+    model="gemini-3.6-flash",
     contents=[
         types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
         prompt
