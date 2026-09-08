@@ -84,12 +84,12 @@ if image_bytes:
                         """
 
                         response = client.models.generate_content(
-                            model="gemini-2.5-flash",
-                            contents=[
-                                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                                prompt
-                            ]
-                        )
+    model="gemini-1.5-flash",
+    contents=[
+        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+        prompt
+    ]
+)
                         st.success("분석 완료!")
                         st.markdown(response.text)
                     except Exception as e:
