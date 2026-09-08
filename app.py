@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("📊 협력사 견적/원가계산서 타당성 자동 분석 시스템")
-st.caption("공정별 설비효율 Max치, 중기중앙회 공인 노임단가, 경비/이윤 마진율 기준을 대조하여 네고 포인트를 정밀 분석합니다.")
+st.caption("공정별 설비효율 Max치, 중기중앙회 공인 노임단가, 재료관리비/경비/일반관리비/영업이익 기준을 대조하여 네고 포인트를 정밀 분석합니다.")
 
 # ---------------------------------------------------------
 # 2. 공정별 표준 데이터 맵 (설비효율 Max치 & 중기중앙회 공인 임율 매핑)
@@ -72,12 +72,12 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key 입력", type="password", help="구글 AI Studio에서 발급받은 API 키")
     st.divider()
 
-    # [1] 공정 및 업종 선택 (선택 시 효율 Max치와 임율이 기본 세팅됨)
+    # [1] 공정 및 업종 선택 (선택 시 효율 Max치와 임율 자동 반영)
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox("공정 / 업종 선택", industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
 
-    # [2] 설비 효율 (선택한 공정의 Max 값 기준으로 즉시 뜸)
+    # [2] 설비 효율 (선택한 공정의 Max 값 기준으로 즉시 세팅)
     std_eff = st.slider(
         f"설비 효율 기준 (권장 Max: {cfg['max_eff']}%)",
         min_value=50,
@@ -95,20 +95,59 @@ with st.sidebar:
         max_value=15.0,
         value=cfg["sec_rate"],
         step=0.1,
-        help="중소기업중앙회 임금조사 일급을 1일 8시간(28,800초)으로 나눈 초당 표준 임율입니다."
+        help="중소기업중앙회 직종별 임금조사 기준 일급을 1일 8시간(28,800초)으로 나눈 초당 표준 임율입니다."
     )
 
     # [4] 여유율 (ET율)
-    std_et_rate = st.slider("여유율 / ET율 기준 (%)", 0, 35, 10, step=1)
+    std_et_rate = st.slider(
+        "여유율 / ET율 기준 (%)",
+        min_value=0,
+        max_value=35,
+        value=10,
+        step=1,
+        help="양산 표준은 10%이며, 구형 기종이나 소량 다품종인 경우 15~25% 수준으로 완화할 수 있습니다."
+    )
 
     st.divider()
 
-    # [5] 경비율 / 관리비 / 이윤 조절 섹션
+    # [5] 경비율 / 관리비 / 영업이익 조절 섹션 (요청 기준값 15%, 10%, 2% 적용)
     st.subheader("📑 원가 가산율 통제 기준")
-    std_overhead_rate = st.slider("간접제조경비율 (노무비 대비 %)", 20, 80, 50, step=5, help="통상 직접노무비의 40~50% 수준")
-    std_admin_rate = st.slider("일반관리비율 (%)", 1.0, 15.0, 5.0, step=0.5, help="제조원가의 5% 수준 인정")
-    std_profit_rate = st.slider("영업이윤율 (%)", 1.0, 15.0, 6.0, step=0.5, help="가공비(노무비+경비)+일반관리비의 5~7% 인정 (재료비 제외)")
-    std_mfg_manage_rate = st.slider("제조관리비율 (%)", 0.0, 10.0, 2.0, step=0.5, help="포장/출하 등 별도 제조관리비 인정 상한")
+    
+    std_mat_manage_rate = st.slider(
+        "재료관리비율 (%)",
+        min_value=0.0,
+        max_value=10.0,
+        value=2.0,
+        step=0.5,
+        help="순수 순재료비에 가산되는 원자재 보관/운반/수불 관리비 상한 기준 (기본 2.0%)"
+    )
+
+    std_overhead_rate = st.slider(
+        "간접제조경비율 (노무비 대비 %)",
+        min_value=20,
+        max_value=80,
+        value=50,
+        step=5,
+        help="통상 직접노무비의 40~50% 수준 인정"
+    )
+
+    std_admin_rate = st.slider(
+        "일반관리비율 (%)",
+        min_value=1.0,
+        max_value=25.0,
+        value=15.0,
+        step=0.5,
+        help="제조원가(재료비+노무비+경비) 대비 본사 관리/영업 간접비 상한 기준 (기본 15.0%)"
+    )
+
+    std_profit_rate = st.slider(
+        "영업이익율 (%)",
+        min_value=1.0,
+        max_value=20.0,
+        value=10.0,
+        step=0.5,
+        help="가공비(노무비+경비)+일반관리비 대비 적정 영업이익 상한 기준 (기본 10.0%, 순수 재료비 가산 배제 원칙)"
+    )
 
     st.divider()
 
@@ -177,12 +216,12 @@ if image_bytes:
                     1. 적용 공정/업종: {selected_industry}
                     2. 기준 설비 효율: {std_eff}% 이상 필수 (원가계산서 기재 효율이 이보다 낮으면 생산성 미달 전가로 삭감 지적)
                     3. 기준 초당 임율: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 기준치 초과 여부 집중 검증)
-                    4. 여유율 (ET율): 기준 {std_et_rate}% (이를 초과하여 여유시간/준비시간을 잡았는지 확인)
+                    4. 여유율 (ET율): 기준 {std_et_rate}% (이를 초과하여 여유시간/준비시간을 과다 반영했는지 확인)
                     5. 경비 및 이윤 통제 기준:
+                       - 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 (초과분 삭감 지적)
                        - 간접제조경비율: 노무비의 {std_overhead_rate}% 이하
-                       - 제조관리비율: {std_mfg_manage_rate}% 이하
-                       - 일반관리비율: {std_admin_rate}% 이하
-                       - 영업이윤율: {std_profit_rate}% 이하 (순수 재료비에 이윤을 가산했는지 적발 필수)
+                       - 일반관리비율: 제조원가의 {std_admin_rate}% 이하 (초과분 삭감 지적)
+                       - 영업이익율: {std_profit_rate}% 이하 (가공비+일반관리비 기준, 순수 재료비에 이윤을 가산했는지 철저히 확인)
                     6. 스크랩 단가: {scrap_criteria_text}
 
                     [출력 서식]
@@ -195,8 +234,8 @@ if image_bytes:
 
                     ### 3. 세부 과다 계상 항목 및 네고 가능 금액 산출
                     - 설비 효율 정상화({std_eff}%) 및 임율({std_labor_rate}원/초) 적용 시 노무비 절감 가능액
-                    - 스크랩 환입 단가 축소 여부 및 정상화 시 재료비 절감액
-                    - 경비율, 일반관리비({std_admin_rate}%), 이윤율({std_profit_rate}%) 초과 계상액
+                    - 재료관리비율({std_mat_manage_rate}%) 초과 여부 및 스크랩 환입 단가 정상화 시 재료비 절감액
+                    - 일반관리비({std_admin_rate}%) 및 영업이익({std_profit_rate}%) 초과 계상액
                     - 수작업(Hand work) 및 불필요 공수 소명 대상 지적
 
                     ### 4. 협력사 송부용 공식 네고 코멘트
@@ -204,7 +243,6 @@ if image_bytes:
                     """
 
                     # 503 서버 과부하 자동 재시도 로직
-                    success = False
                     for attempt in range(3):
                         try:
                             response = client.models.generate_content(
@@ -216,7 +254,6 @@ if image_bytes:
                             )
                             st.success("타당성 검토 완료!")
                             st.markdown(response.text)
-                            success = True
                             break
                         except Exception as e:
                             if "503" in str(e) and attempt < 2:
