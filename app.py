@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 st.title("📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적 산출")
-st.caption("공정별 설비효율, 기계경비 현실화 배부율, 중기중앙회 공인 임율을 반영하여 신뢰도 높은 '적정 사정 원가계산서'를 자동 생성합니다.")
+st.caption("공정별 설비효율, 기계경비 배부율, 재질별 스크랩 재활용 가능 여부를 자동 판별하여 최적 사정 견적을 도출합니다.")
 
 # ---------------------------------------------------------
 # 2. 공정별 표준 데이터 맵
@@ -173,10 +173,10 @@ with st.sidebar:
     scrap_mode = st.radio("스크랩 단가 검증 방식", ["실거래가 기준 (원/kg)", "신재 대비 인정율 (%)"], index=0)
     if scrap_mode == "실거래가 기준 (원/kg)":
         target_scrap_price = st.number_input("당사 실 스크랩 매각 단가 (원/kg)", min_value=0, value=12500, step=500)
-        scrap_criteria_text = f"실거래 매각단가: {target_scrap_price:,}원/kg 이상 반영 필수"
+        scrap_criteria_text = f"실거래 매각단가: {target_scrap_price:,}원/kg 이상 반영 (재활용/매각 가능 소재에 한함)"
     else:
         target_scrap_ratio = st.slider("스크랩 인정 기준율 (%)", 50, 90, 65, step=5)
-        scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}% 이상 반영 필수"
+        scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}% 이상 반영 (재활용/매각 가능 소재에 한함)"
 
 # ---------------------------------------------------------
 # 4. 이미지 입력 영역
@@ -223,29 +223,36 @@ if image_bytes:
             st.warning("👈 왼쪽 사이드바에 Gemini API Key를 입력하거나 Secrets에 등록해주세요.")
         else:
             if st.button("🚀 사정 원가계산서 자동 산출", type="primary"):
-                spin_msg = "견적 분석 및 사정 원가계산서 생성 중..."
+                spin_msg = "재질/스크랩 재활용성 판별 및 표준 사정 견적 산출 중..."
                 with st.spinner(spin_msg):
                     client = genai.Client(api_key=api_key)
 
                     prompt = f"""
                     당신은 자동차 부품 및 정밀제조업 구매팀의 원가 분석 수석관입니다.
-                    제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 공정 특성을 반영한 당사 표준 기준에 맞추어 '정상 사정 원가계산서'를 재계산하세요.
+                    제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 공정 및 재질 특성을 반영한 당사 표준 기준에 맞추어 '정상 사정 원가계산서'를 재계산하세요.
 
                     [당사 사정 원가 통제 기준]
                     1. 적용 공정: {selected_industry} (특성: {cfg['desc']})
                     2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 생산성 저하 전가로 삭감)
-                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)
+                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중기중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)
                     4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 준비시간 배제)
                     5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 적용 (입고운반비/하차비/보관비 중복 반영 엄격 배제)
                     6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사가 제출한 경비율(또는 기계경비 금액)이 당사 기준보다 낮다면 '협력사 제출 비율/금액'을 그대로 인정하여 유지할 것.
-                    7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면(예: 5% 등) 협력사 제출 비율을 그대로 유지할 것 (Min 원칙).
-                    8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율을 그대로 유지할 것 (순재료비 이윤 배제).
-                    9. 스크랩 단가 검증: {scrap_criteria_text}
+                    7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율 유지 (Min 원칙).
+                    8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율 유지 (순재료비 이윤 배제).
 
-                    [절대 원칙 - 단가 역전 금지]
+                    [★ 스크랩 재활용/재사용 가능 여부 판별 규칙 (핵심)]
+                    - 원가계산서에 기재된 '재질명(GRADE)'과 '공정'을 분석하여 스크랩 재사용 여부를 스스로 판정하세요.
+                      1) 사출/플라스틱 공정:
+                         - 복합수지(PP TD20%, PA66 GF30% 등 충진재/유리섬유 함유) 또는 사출 규격상 분쇄재(Regrind) 혼용이 금지되어 러너(Gate/Runner) 재사용이 불가능한 경우:
+                           -> GATE/러너를 포함한 **'원재료 투입량(투입중량) 전체'를 순재료비로 인정**하고, 스크랩 환입은 0원으로 처리.
+                         - 단, 핫러너(Hot Runner) 적용이 명시되어 러너가 발생하지 않거나 분쇄재 재사용이 허용되는 일반 범용수지의 경우 NET 중량 기준으로 계산.
+                      2) 프레스/금속/절삭가공/다이캐스팅 공정:
+                         - 잔재(Scrap)를 고철/비철 스크랩으로 매각 회수가 가능하므로 **반드시 스크랩 환입을 반영** ({scrap_criteria_text} 기준 적용).
+
+                    [★ 절대 원칙 - 단가 역전 금지]
                     - 본 원가 검토의 목적은 '과다 청구 항목의 삭감'입니다.
-                    - 협력사가 이미 당사 기준선보다 낮게 책정한 항목을 당사 기준으로 강제 상향 적용하여 총 사정 단가가 협력사 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
-                    - 사정 단가는 협력사 제출 단가 이하(<=)로만 도출되어야 합니다.
+                    - 협력사가 이미 당사 기준선보다 낮게 책정한 착한 항목을 강제로 상향하여 총 사정 단가가 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
 
                     [출력 형식 가이드]
                     반드시 유효한 JSON 형식으로만 응답해야 합니다. 모든 금액/수치는 따옴표 없는 숫자(float 또는 int)여야 합니다.
@@ -254,10 +261,9 @@ if image_bytes:
                     - comparison: submitted_price, adjusted_price, cost_reduction, reduction_rate
                     - cost_breakdown: 배열 형태, 각 요소는 category, item, submitted, adjusted, diff, note
                       (항목: 투입재료비, 스크랩환입(-), 순재료비, 재료관리비, 직접노무비, 간접제조경비, 제조원가 합계, 일반관리비, 영업이익, 최종 견적 단가)
-                    - audit_comment: 상세 네고 검토의견 및 협력사 발송용 공식 공문 문구 (마크다운 문자열)
+                    - audit_comment: 스크랩 재활용성 판별 근거, 세부 삭감 사유, 협력사 발송용 공식 공문 문구를 마크다운 문자열로 기술.
                     """
 
-                    success = False
                     for attempt in range(3):
                         try:
                             response = client.models.generate_content(
@@ -301,7 +307,6 @@ if image_bytes:
                             if "audit_comment" in data and data["audit_comment"]:
                                 st.markdown(data["audit_comment"])
 
-                            success = True
                             break
                         except Exception as e:
                             if "503" in str(e) and attempt < 2:
