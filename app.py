@@ -3,7 +3,6 @@ import io
 import time
 import pandas as pd
 import json
-import re
 from google import genai
 from google.genai import types
 from streamlit_paste_button import paste_image_button
@@ -21,7 +20,7 @@ st.title("📊 협력사 견적/원가계산서 타당성 자동 분석 및 사�
 st.caption("공정별 설비효율, 기계경비 현실화 배부율, 중기중앙회 공인 임율을 반영하여 신뢰도 높은 '적정 사정 원가계산서'를 자동 생성합니다.")
 
 # ---------------------------------------------------------
-# 2. 공정별 표준 데이터 맵 (기계경비 배부율 현실화 반영)
+# 2. 공정별 표준 데이터 맵
 # ---------------------------------------------------------
 INDUSTRY_CONFIG = {
     "프레스": {
@@ -88,7 +87,6 @@ INDUSTRY_CONFIG = {
 with st.sidebar:
     st.header("⚙️ 분석 및 사정 기준 설정")
 
-    # Secrets 등록 여부 자동 확인
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
         st.success("🔑 API Key 자동 연동 완료")
@@ -97,12 +95,10 @@ with st.sidebar:
 
     st.divider()
 
-    # [1] 공정 선택
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox("공정 / 업종 선택", industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
 
-    # [2] 설비 효율 기준
     std_eff = st.slider(
         f"설비 효율 기준 (권장 Max: {cfg['max_eff']}%)",
         min_value=50,
@@ -112,7 +108,6 @@ with st.sidebar:
         help="공정 선택 시 권장 상한 효율(Max)로 자동 세팅됩니다."
     )
 
-    # [3] 표준 임율 기준
     st.markdown(f"**중기중앙회 공인 직종: {cfg['job_name']}**")
     std_labor_rate = st.number_input(
         "적용 임율 기준 (원/초)",
@@ -123,7 +118,6 @@ with st.sidebar:
         help="중기중앙회 임금조사 1일 8시간(28,800초) 기준 초당 임율"
     )
 
-    # [4] 여유율 (ET율)
     std_et_rate = st.slider(
         "여유율 / ET율 기준 (%)",
         min_value=0,
@@ -135,7 +129,6 @@ with st.sidebar:
 
     st.divider()
 
-    # [5] 원가 가산율 통제 기준
     st.subheader("📑 원가 가산율 통제 기준 (상한선)")
     
     std_mat_manage_rate = st.slider(
@@ -177,7 +170,6 @@ with st.sidebar:
 
     st.divider()
 
-    # [6] 스크랩 검증 방식
     scrap_mode = st.radio("스크랩 단가 검증 방식", ["실거래가 기준 (원/kg)", "신재 대비 인정율 (%)"], index=0)
     if scrap_mode == "실거래가 기준 (원/kg)":
         target_scrap_price = st.number_input("당사 실 스크랩 매각 단가 (원/kg)", min_value=0, value=12500, step=500)
@@ -231,56 +223,41 @@ if image_bytes:
             st.warning("👈 왼쪽 사이드바에 Gemini API Key를 입력하거나 Secrets에 등록해주세요.")
         else:
             if st.button("🚀 사정 원가계산서 자동 산출", type="primary"):
-                spin_msg = "업종별 기계경비 현실화 및 표준 사정 원가계산서 재산출 중..."
+                spin_msg = "견적 분석 및 사정 원가계산서 생성 중..."
                 with st.spinner(spin_msg):
                     client = genai.Client(api_key=api_key)
 
-                    prompt_parts = [
-                        "당신은 자동차 부품 및 정밀제조업 구매팀의 원가 분석 수석관입니다.",
-                        "제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 공정 특성을 반영한 당사 표준 기준에 맞추어 '정상 사정 원가계산서'를 재계산하세요.",
-                        "",
-                        "[당사 사정 원가 통제 기준]",
-                        f"1. 적용 공정: {selected_industry} (특성: {cfg['desc']})",
-                        f"2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 생산성 저하 전가로 삭감)",
-                        f"3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)",
-                        f"4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 준비시간 배제)",
-                        f"5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 적용 (입고운반비 중복 반영 엄격 배제)",
-                        f"6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사가 제출한 경비율(또는 기계경비 금액)이 당사 기준보다 낮다면 '협력사 제출 비율/금액'을 그대로 인정하여 유지할 것.",
-                        f"7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면(예: 5% 등) 협력사 제출 비율을 그대로 유지할 것 (Min 원칙).",
-                        f"8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율을 그대로 유지할 것 (순재료비 이윤 배제).",
-                        f"9. 스크랩 단가 검증: {scrap_criteria_text}",
-                        "",
-                        "[★ 절대 사정 원칙 - 단가 역전 금지]",
-                        "- 본 원가 검토의 목적은 '과다 청구 항목의 삭감'입니다.",
-                        "- 협력사가 이미 당사 기준선보다 낮게 책정한 착한 항목(낮은 경비율, 낮은 일반관리비율 등)을 당사 기준으로 강제 상향 적용하여, 총 사정 단가가 협력사 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.",
-                        "- 사정 단가는 협력사 제출 단가 이하(<=)로만 도출되어야 합니다.",
-                        "",
-                        "[출력 규칙]",
-                        "반드시 첫 부분에 START_JSON 과 END_JSON 태그 사이에 아래 구조의 순수 JSON 데이터만 넣으세요.",
-                        "모든 금액 및 비율 수치는 쉼표(,) 없는 순수 숫자여야 합니다.",
-                        "START_JSON",
-                        json.dumps({
-                            "item_info": {"supplier": "협력사명", "part_name": "품명", "part_no": "품번"},
-                            "comparison": {"submitted_price": 0.0, "adjusted_price": 0.0, "cost_reduction": 0.0, "reduction_rate": 0.0},
-                            "cost_breakdown": [
-                                {"category": "1. 재료비", "item": "투입재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "1. 재료비", "item": "스크랩환입(-)", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "1. 재료비", "item": "순재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "1. 재료비", "item": "재료관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_mat_manage_rate}% 이하 적용"},
-                                {"category": "2. 가공비", "item": "직접노무비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"임율 {std_labor_rate}원/초, 효율 {std_eff}% 기준"},
-                                {"category": "2. 가공비", "item": "간접제조경비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
-                                {"category": "3. 제조원가", "item": "제조원가 합계", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "4. 일반관리비", "item": "일반관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
-                                {"category": "5. 영업이익", "item": "영업이익", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
-                                {"category": "6. 최종단가", "item": "최종 견적 단가", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "당사 사정 목표가"}
-                            ]
-                        }, ensure_ascii=False),
-                        "END_JSON",
-                        "",
-                        "END_JSON 이후에는 구체적 사정 논리와 협력사 통보용 공식 공문 문구를 마크다운으로 작성하세요."
-                    ]
-                    prompt = "\n".join(prompt_parts)
+                    prompt = f"""
+                    당신은 자동차 부품 및 정밀제조업 구매팀의 원가 분석 수석관입니다.
+                    제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 공정 특성을 반영한 당사 표준 기준에 맞추어 '정상 사정 원가계산서'를 재계산하세요.
 
+                    [당사 사정 원가 통제 기준]
+                    1. 적용 공정: {selected_industry} (특성: {cfg['desc']})
+                    2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 생산성 저하 전가로 삭감)
+                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)
+                    4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 준비시간 배제)
+                    5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 적용 (입고운반비/하차비/보관비 중복 반영 엄격 배제)
+                    6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사가 제출한 경비율(또는 기계경비 금액)이 당사 기준보다 낮다면 '협력사 제출 비율/금액'을 그대로 인정하여 유지할 것.
+                    7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면(예: 5% 등) 협력사 제출 비율을 그대로 유지할 것 (Min 원칙).
+                    8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율을 그대로 유지할 것 (순재료비 이윤 배제).
+                    9. 스크랩 단가 검증: {scrap_criteria_text}
+
+                    [절대 원칙 - 단가 역전 금지]
+                    - 본 원가 검토의 목적은 '과다 청구 항목의 삭감'입니다.
+                    - 협력사가 이미 당사 기준선보다 낮게 책정한 항목을 당사 기준으로 강제 상향 적용하여 총 사정 단가가 협력사 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
+                    - 사정 단가는 협력사 제출 단가 이하(<=)로만 도출되어야 합니다.
+
+                    [출력 형식 가이드]
+                    반드시 유효한 JSON 형식으로만 응답해야 합니다. 모든 금액/수치는 따옴표 없는 숫자(float 또는 int)여야 합니다.
+                    키 구조:
+                    - item_info: supplier, part_name, part_no
+                    - comparison: submitted_price, adjusted_price, cost_reduction, reduction_rate
+                    - cost_breakdown: 배열 형태, 각 요소는 category, item, submitted, adjusted, diff, note
+                      (항목: 투입재료비, 스크랩환입(-), 순재료비, 재료관리비, 직접노무비, 간접제조경비, 제조원가 합계, 일반관리비, 영업이익, 최종 견적 단가)
+                    - audit_comment: 상세 네고 검토의견 및 협력사 발송용 공식 공문 문구 (마크다운 문자열)
+                    """
+
+                    success = False
                     for attempt in range(3):
                         try:
                             response = client.models.generate_content(
@@ -288,52 +265,48 @@ if image_bytes:
                                 contents=[
                                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                                     prompt
-                                ]
-                            )
-                            res_text = response.text
-
-                            if "START_JSON" in res_text and "END_JSON" in res_text:
-                                raw_json = res_text.split("START_JSON")[1].split("END_JSON")[0].strip()
-                                raw_json = re.sub(r"^```json\s*", "", raw_json)
-                                raw_json = re.sub(r"^```\s*", "", raw_json)
-                                raw_json = re.sub(r"\s*```$", "", raw_json)
-                                
-                                data = json.loads(raw_json)
-
-                                # 상단 요약 카드
-                                comp = data["comparison"]
-                                c_sub, c_adj, c_diff, c_rate = st.columns(4)
-                                c_sub.metric("협력사 제출가", f"{comp['submitted_price']:,.1f}원")
-                                c_adj.metric("당사 사정 목표가", f"{comp['adjusted_price']:,.1f}원")
-                                c_diff.metric("절감 가능액", f"-{comp['cost_reduction']:,.1f}원")
-                                c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
-
-                                # 표준 원가계산서 대조 테이블
-                                st.markdown("#### 📋 표준 견적 대조 원가계산서")
-                                df = pd.DataFrame(data["cost_breakdown"])
-                                df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
-                                st.dataframe(df, use_container_width=True, hide_index=True)
-
-                                # CSV 다운로드 (영문 파일명으로 인코딩 에러 방지)
-                                csv_data = df.to_csv(index=False, encoding="utf-8-sig")
-                                st.download_button(
-                                    label="📥 사정 원가계산서 엑셀(CSV) 다운로드",
-                                    data=csv_data,
-                                    file_name="Cost_Audit_Report.csv",
-                                    mime="text/csv"
+                                ],
+                                config=types.GenerateContentConfig(
+                                    response_mime_type="application/json"
                                 )
-                                st.divider()
+                            )
+                            res_text = response.text.strip()
+                            data = json.loads(res_text)
 
-                                comment_text = res_text.split("END_JSON")[1].strip()
-                                st.markdown(comment_text)
-                            else:
-                                st.markdown(res_text)
+                            # 상단 요약 카드
+                            comp = data["comparison"]
+                            c_sub, c_adj, c_diff, c_rate = st.columns(4)
+                            c_sub.metric("협력사 제출가", f"{comp['submitted_price']:,.1f}원")
+                            c_adj.metric("당사 사정 목표가", f"{comp['adjusted_price']:,.1f}원")
+                            c_diff.metric("절감 가능액", f"-{comp['cost_reduction']:,.1f}원")
+                            c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
 
+                            # 표준 원가계산서 대조 테이블
+                            st.markdown("#### 📋 표준 견적 대조 원가계산서")
+                            df = pd.DataFrame(data["cost_breakdown"])
+                            df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
+                            st.dataframe(df, use_container_width=True, hide_index=True)
+
+                            # CSV 다운로드
+                            csv_data = df.to_csv(index=False, encoding="utf-8-sig")
+                            st.download_button(
+                                label="📥 사정 원가계산서 엑셀(CSV) 다운로드",
+                                data=csv_data,
+                                file_name="Cost_Audit_Report.csv",
+                                mime="text/csv"
+                            )
+                            st.divider()
+
+                            # 상세 코멘트 출력
+                            if "audit_comment" in data and data["audit_comment"]:
+                                st.markdown(data["audit_comment"])
+
+                            success = True
                             break
                         except Exception as e:
                             if "503" in str(e) and attempt < 2:
                                 time.sleep(3)
                                 continue
                             else:
-                                st.error(f"오류 발생: {e}")
+                                st.error(f"분석 중 오류 발생: {e}")
                                 break
