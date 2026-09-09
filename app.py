@@ -33,7 +33,13 @@ INDUSTRY_CONFIG = {
 # 3. 사이드바 설정 영역
 with st.sidebar:
     st.header("⚙️ 분석 및 사정 기준 설정")
-    api_key = st.text_input("Gemini API Key 입력", type="password", help="구글 AI Studio API 키")
+    with st.sidebar:
+    st.header("⚙️ 분석 및 사정 기준 설정")
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    else:
+        api_key = st.text_input("Gemini API Key 입력", type="password", help="구글 AI Studio API 키")
+    st.divider()
     st.divider()
 
     industry_list = list(INDUSTRY_CONFIG.keys())
