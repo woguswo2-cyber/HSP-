@@ -8,7 +8,9 @@ from google import genai
 from google.genai import types
 from streamlit_paste_button import paste_image_button
 
+# ---------------------------------------------------------
 # 1. 페이지 레이아웃
+# ---------------------------------------------------------
 st.set_page_config(
     page_title="구매 견적/원가계산서 타당성 자동 검토",
     page_icon="📊",
@@ -18,7 +20,10 @@ st.set_page_config(
 st.title("📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적 산출")
 st.caption("제출 견적을 분석하여 당사 표준 원가 기준이 적용된 '적정 사정 원가계산서'를 자동 생성하고 엑셀로 다운로드합니다.")
 
-# 2. 공정별 표준 데이터 맵
+# ---------------------------------------------------------
+# 2. 공정별 표준 데이터 맵 (Max 설비효율 & 중기중앙회 공인 임율)
+#    * 8시간/일 = 28,800초 기준 초당 임율 환산치
+# ---------------------------------------------------------
 INDUSTRY_CONFIG = {
     "프레스": {"max_eff": 85, "job_name": "판금/프레스조작원", "sec_rate": 4.04},
     "가공": {"max_eff": 90, "job_name": "선반/CNC기계조작원", "sec_rate": 4.11},
@@ -30,52 +35,108 @@ INDUSTRY_CONFIG = {
     "그 외": {"max_eff": 80, "job_name": "제조업 생산직 평균", "sec_rate": 3.98}
 }
 
+# ---------------------------------------------------------
 # 3. 사이드바 설정 영역
+# ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 분석 및 사정 기준 설정")
-    with st.sidebar:
-    st.header("⚙️ 분석 및 사정 기준 설정")
+
+    # Secrets 등록 여부 자동 판별
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
+        st.success("🔑 API Key 자동 연동 완료")
     else:
         api_key = st.text_input("Gemini API Key 입력", type="password", help="구글 AI Studio API 키")
-    st.divider()
+
     st.divider()
 
+    # [1] 공정 선택
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox("공정 / 업종 선택", industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
 
+    # [2] 설비 효율 기준
     std_eff = st.slider(
         f"설비 효율 기준 (권장 Max: {cfg['max_eff']}%)",
-        min_value=50, max_value=95, value=cfg["max_eff"], step=5
+        min_value=50,
+        max_value=95,
+        value=cfg["max_eff"],
+        step=5,
+        help="공정 선택 시 권장 상한 효율(Max)로 자동 세팅됩니다."
     )
 
-    st.markdown(f"**중기중앙회 공인 임율: {cfg['job_name']}**")
+    # [3] 표준 임율 기준
+    st.markdown(f"**중기중앙회 공인 직종: {cfg['job_name']}**")
     std_labor_rate = st.number_input(
         "적용 임율 기준 (원/초)",
-        min_value=1.0, max_value=15.0, value=cfg["sec_rate"], step=0.1
+        min_value=1.0,
+        max_value=15.0,
+        value=cfg["sec_rate"],
+        step=0.1,
+        help="중소기업중앙회 임금조사 일급을 1일 8시간(28,800초)으로 나눈 초당 표준 임율입니다."
     )
 
-    std_et_rate = st.slider("여유율 / ET율 기준 (%)", 0, 35, 10, step=1)
+    # [4] 여유율 (ET율)
+    std_et_rate = st.slider(
+        "여유율 / ET율 기준 (%)",
+        min_value=0,
+        max_value=35,
+        value=10,
+        step=1,
+        help="양산 표준은 10%이며, 구형 기종이나 소량 다품종인 경우 15~25% 수준으로 완화할 수 있습니다."
+    )
 
     st.divider()
+
+    # [5] 원가 가산율 통제 기준
     st.subheader("📑 원가 가산율 통제 기준")
-    std_mat_manage_rate = st.slider("재료관리비율 (%)", 0.0, 10.0, 2.0, step=0.5)
-    std_overhead_rate = st.slider("간접제조경비율 (노무비 대비 %)", 20, 80, 50, step=5)
-    std_admin_rate = st.slider("일반관리비율 (%)", 1.0, 25.0, 15.0, step=0.5)
-    std_profit_rate = st.slider("영업이익율 (%)", 1.0, 20.0, 10.0, step=0.5)
+    std_mat_manage_rate = st.slider(
+        "재료관리비율 (%)",
+        min_value=0.0,
+        max_value=10.0,
+        value=2.0,
+        step=0.5,
+        help="순수 순재료비에 가산되는 원자재 보관/운반/수불 관리비 상한 기준 (기본 2.0%)"
+    )
+    std_overhead_rate = st.slider(
+        "간접제조경비율 (노무비 대비 %)",
+        min_value=20,
+        max_value=80,
+        value=50,
+        step=5,
+        help="통상 직접노무비의 40~50% 수준 인정"
+    )
+    std_admin_rate = st.slider(
+        "일반관리비율 (%)",
+        min_value=1.0,
+        max_value=25.0,
+        value=15.0,
+        step=0.5,
+        help="제조원가(재료비+노무비+경비) 대비 본사 관리/영업 간접비 상한 기준 (기본 15.0%)"
+    )
+    std_profit_rate = st.slider(
+        "영업이익율 (%)",
+        min_value=1.0,
+        max_value=20.0,
+        value=10.0,
+        step=0.5,
+        help="가공비(노무비+경비)+일반관리비 대비 적정 영업이익 상한 기준 (기본 10.0%, 순수 재료비 가산 배제 원칙)"
+    )
 
     st.divider()
+
+    # [6] 스크랩 검증 방식
     scrap_mode = st.radio("스크랩 단가 검증 방식", ["실거래가 기준 (원/kg)", "신재 대비 인정율 (%)"], index=0)
     if scrap_mode == "실거래가 기준 (원/kg)":
         target_scrap_price = st.number_input("당사 실 스크랩 매각 단가 (원/kg)", min_value=0, value=12500, step=500)
-        scrap_criteria_text = f"실거래 매각단가: {target_scrap_price:,}원/kg"
+        scrap_criteria_text = f"실거래 매각단가: {target_scrap_price:,}원/kg 이상 반영 필수"
     else:
         target_scrap_ratio = st.slider("스크랩 인정 기준율 (%)", 50, 90, 65, step=5)
-        scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}%"
+        scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}% 이상 반영 필수"
 
-# 4. 이미지 입력
+# ---------------------------------------------------------
+# 4. 이미지 입력 영역
+# ---------------------------------------------------------
 st.write("### 📂 검토할 원가계산서 입력")
 tab1, tab2 = st.tabs(["📋 캡처본 바로 붙여넣기 (Ctrl+V)", "📁 파일 직접 올리기"])
 
@@ -102,7 +163,9 @@ with tab2:
         image_bytes = uploaded_file.getvalue()
         mime_type = uploaded_file.type
 
-# 5. 분석 및 사정 견적서 생성
+# ---------------------------------------------------------
+# 5. 분석 실행 및 사정 견적서 출력
+# ---------------------------------------------------------
 if image_bytes:
     col1, col2 = st.columns([1, 1], gap="medium")
 
@@ -113,29 +176,30 @@ if image_bytes:
     with col2:
         st.subheader("🔍 타당성 검토 및 당사 사정 견적")
         if not api_key:
-            st.warning("👈 왼쪽 사이드바에 Gemini API Key를 입력해주세요.")
+            st.warning("👈 왼쪽 사이드바에 Gemini API Key를 입력하거나 Secrets에 등록해주세요.")
         else:
             if st.button("🚀 사정 원가계산서 자동 산출", type="primary"):
-                with st.spinner("원가 요소 추출 및 표준 원가계산서 재산출 중..."):
+                with st.spinner("원가 요소 분석 및 표준 원가계산서 재산출 중..."):
                     client = genai.Client(api_key=api_key)
 
                     prompt = f"""
-                    당신은 자동차 부품/제조업 구매팀 원가 분석 수석관입니다.
-                    제출된 원가계산서 이미지를 분석하여 과다 청구 내역을 삭감하고, 당사 내부 표준 기준을 적용한 '정상 사정 원가계산서'를 재계산하세요.
+                    당신은 자동차 부품 및 정밀제조업 구매팀의 원가 분석 수석관입니다.
+                    제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 당사 내부 표준 기준을 적용한 '정상 사정 원가계산서'를 작성하세요.
 
-                    [당사 사정 원가 기준]
-                    - 적용 공정: {selected_industry}
-                    - 설비 효율: {std_eff}%
-                    - 적용 임율: {std_labor_rate} 원/초
-                    - 여유율(ET율): {std_et_rate}%
-                    - 재료관리비: 순재료비의 {std_mat_manage_rate}% (입고운반비 중복 반영 배제)
-                    - 간접제조경비: 직접노무비의 {std_overhead_rate}%
-                    - 일반관리비: 제조원가의 {std_admin_rate}%
-                    - 영업이익: (가공비+일반관리비)의 {std_profit_rate}% (순재료비 이윤 가산 배제)
-                    - 스크랩 단가 기준: {scrap_criteria_text}
+                    [당사 사정 원가 통제 기준]
+                    1. 적용 공정: {selected_industry}
+                    2. 기준 설비 효율: {std_eff}% 이상 필수 (원가계산서 기재 효율이 미달 시 생산성 저하 전가로 지적)
+                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감)
+                    4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 시간 배제)
+                    5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하
+                       - 중요: 재료관리비에 입고운반비/보관비가 이미 포함되어 있으므로 원자재 운반비 별도 청구 시 이중 계상으로 즉시 삭제
+                    6. 간접제조경비율: 직접노무비의 {std_overhead_rate}% 이하
+                    7. 일반관리비율: 제조원가의 {std_admin_rate}% 이하
+                    8. 영업이익율: (가공비+일반관리비)의 {std_profit_rate}% 이하 (순재료비에 이윤 가산 엄격 배제)
+                    9. 스크랩 단가 검증: {scrap_criteria_text}
 
                     [반드시 준수할 출력 규칙]
-                    답변 맨 앞부분에 반드시 아래 JSON 코드블록을 포함하세요. 수치는 숫자형태(단위 제외)로 기재하세요.
+                    답변 시작 부분에 반드시 아래 형식의 JSON 코드블록을 작성하세요. 모든 금액 수치는 쉼표 없는 순수 숫자 형태로 입력하세요.
                     ```json
                     {{
                         "item_info": {{
@@ -153,23 +217,23 @@ if image_bytes:
                             {{"category": "1. 재료비", "item": "투입재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}},
                             {{"category": "1. 재료비", "item": "스크랩환입(-)", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}},
                             {{"category": "1. 재료비", "item": "순재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}},
-                            {{"category": "1. 재료비", "item": "재료관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_mat_manage_rate}% 적용"}},
-                            {{"category": "2. 가공비", "item": "직접노무비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"임율 {std_labor_rate}원/초, 효율 {std_eff}%"}},
-                            {{"category": "2. 가공비", "item": "간접제조경비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"노무비의 {std_overhead_rate}%"}},
+                            {{"category": "1. 재료비", "item": "재료관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "{std_mat_manage_rate}% 적용(운반비 중복 배제)"}},
+                            {{"category": "2. 가공비", "item": "직접노무비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "임율 {std_labor_rate}원/초, 효율 {std_eff}%"}},
+                            {{"category": "2. 가공비", "item": "간접제조경비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "노무비의 {std_overhead_rate}%"}},
                             {{"category": "3. 제조원가", "item": "제조원가 합계", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}},
-                            {{"category": "4. 일반관리비", "item": "일반관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_admin_rate}% 적용"}},
-                            {{"category": "5. 영업이익", "item": "영업이익", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_profit_rate}% 적용"}},
-                            {{"category": "6. 최종단가", "item": "최종 견적 단가", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "목표 단가"}}
+                            {{"category": "4. 일반관리비", "item": "일반관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "{std_admin_rate}% 적용"}},
+                            {{"category": "5. 영업이익", "item": "영업이익", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "{std_profit_rate}% 적용"}},
+                            {{"category": "6. 최종단가", "item": "최종 견적 단가", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "당사 사정 목표가"}}
                         ]
                     }}
                     ```
-                    JSON 블록 이후에는 구매팀 내부 검토의견 및 협력사 통보용 공식 코멘트를 텍스트로 마크다운 서식으로 상세히 작성하세요.
+                    JSON 블록 이후에는 항목별 구체적 삭감 사유와 협력사 전달용 공식 공문 문구를 마크다운으로 작성하세요.
                     """
 
                     for attempt in range(3):
                         try:
                             response = client.models.generate_content(
-                                model="gemini-3.6-flash",
+                                model="gemini-2.5-flash",
                                 contents=[
                                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                                     prompt
@@ -177,46 +241,5 @@ if image_bytes:
                             )
                             res_text = response.text
 
-                            # JSON 추출
-                            json_match = re.search(r'```json\s*(.*?)\s*```', res_text, re.DOTALL)
-                            if json_match:
-                                data = json.loads(json_match.group(1))
-
-                                # 상단 지표 카드 출력
-                                comp = data["comparison"]
-                                c_sub, c_adj, c_diff, c_rate = st.columns(4)
-                                c_sub.metric("협력사 제출가", f"{comp['submitted_price']:,.1f}원")
-                                c_adj.metric("당사 사정 목표가", f"{comp['adjusted_price']:,.1f}원")
-                                c_diff.metric("절감 가능액", f"-{comp['cost_reduction']:,.1f}원")
-                                c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
-
-                                # 표준 원가계산서 비교 테이블
-                                st.markdown("#### 📋 표준 견적 대조 원가계산서")
-                                df = pd.DataFrame(data["cost_breakdown"])
-                                df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
-                                st.dataframe(df, use_container_width=True, hide_index=True)
-
-                                # 엑셀(CSV) 다운로드 버튼
-                                csv_data = df.to_csv(index=False, encoding="utf-8-sig")
-                                st.download_button(
-                                    label="📥 사정 원가계산서 엑셀(CSV) 다운로드",
-                                    data=csv_data,
-                                    file_name=f"원가사정결과_{data['item_info'].get('part_no', '부품')}.csv",
-                                    mime="text/csv"
-                                )
-                                st.divider()
-
-                                # JSON 이후 마크다운 코멘트 출력
-                                comment_text = res_text.split("```")[-1].strip()
-                                st.markdown(comment_text)
-                            else:
-                                st.markdown(res_text)
-
-                            break
-                        except Exception as e:
-                            if "503" in str(e) and attempt < 2:
-                                time.sleep(3)
-                                continue
-                            else:
-                                st.error(f"오류 발생: {e}")
-                                break
+                            # JSON 블록 파싱
+                            json_match = re.search(r'```json\s*(.*?)\s*
