@@ -22,65 +22,63 @@ st.caption("공정별 설비효율, 기계경비 현실화 배부율, 중기중�
 
 # ---------------------------------------------------------
 # 2. 공정별 표준 데이터 맵 (기계경비 배부율 현실화 반영)
-#    - 장치산업(프레스/다이캐스팅/가공/사출/소결): 180% ~ 250%
-#    - 노동집약(조립): 50%
 # ---------------------------------------------------------
 INDUSTRY_CONFIG = {
     "프레스": {
         "max_eff": 85,
         "job_name": "판금/프레스조작원",
         "sec_rate": 4.04,
-        "overhead_rate": 220,  # 300T 고속 프레스 설비상각/전력비 반영
-        "desc": "고가 프레스 설비 상각 및 동력비가 큰 장치 공정 (기본 220%)"
+        "overhead_rate": 220,
+        "desc": "고가 프레스 설비 상각 및 동력비가 큰 장치 공정 (상한 220%)"
     },
     "가공": {
         "max_eff": 90,
         "job_name": "선반/CNC기계조작원",
         "sec_rate": 4.11,
-        "overhead_rate": 200,  # MCT/CNC 머시닝 상각/절삭유/툴링비
-        "desc": "정밀 공작기계 상각 및 절삭유/공구비 반영 (기본 200%)"
+        "overhead_rate": 200,
+        "desc": "정밀 공작기계 상각 및 절삭유/공구비 반영 (상한 200%)"
     },
     "사출": {
         "max_eff": 90,
         "job_name": "플라스틱사출기조작원",
         "sec_rate": 3.65,
-        "overhead_rate": 200,  # 사출기 히터 전력비/로봇 상각비
-        "desc": "사출 성형기 히터 전력비 및 취출 로봇 상각비 반영 (기본 200%)"
+        "overhead_rate": 200,
+        "desc": "사출 성형기 히터 전력비 및 취출 로봇 상각비 반영 (상한 200%)"
     },
     "소결": {
         "max_eff": 85,
         "job_name": "소성로/성형기조작원",
         "sec_rate": 3.71,
-        "overhead_rate": 200,  # 성형프레스/연속 소결로 가스/전력비
-        "desc": "분말성형 프레스 및 연속 소결로 분위기가스/전력비 반영 (기본 200%)"
+        "overhead_rate": 200,
+        "desc": "분말성형 프레스 및 연속 소결로 분위기가스/전력비 반영 (상한 200%)"
     },
     "다이캐스팅": {
         "max_eff": 75,
         "job_name": "다이캐스트원/주조원",
         "sec_rate": 3.69,
-        "overhead_rate": 250,  # 용해로 가스/전기세, 대형 주조기 상각
-        "desc": "용해로 가스·전력비 및 고온 주조 설비 감가상각 반영 (기본 250%)"
+        "overhead_rate": 250,
+        "desc": "용해로 가스·전력비 및 고온 주조 설비 감가상각 반영 (상한 250%)"
     },
     "조립": {
         "max_eff": 90,
         "job_name": "부품조립원/단순노무원",
         "sec_rate": 3.66,
-        "overhead_rate": 50,   # 단순 작업 라인 소모품/소형치구
-        "desc": "작업자 중심 노동집약 공정, 치구/소모품 위주 (기본 50%)"
+        "overhead_rate": 50,
+        "desc": "작업자 중심 노동집약 공정, 치구/소모품 위주 (상한 50%)"
     },
     "일반구매": {
         "max_eff": 85,
         "job_name": "제조업 생산직 평균",
         "sec_rate": 3.98,
         "overhead_rate": 100,
-        "desc": "범용 외주 임가공/구매 부품 표준선 (기본 100%)"
+        "desc": "범용 외주 임가공/구매 부품 표준선 (상한 100%)"
     },
     "그 외": {
         "max_eff": 80,
         "job_name": "제조업 생산직 평균",
         "sec_rate": 3.98,
         "overhead_rate": 100,
-        "desc": "기타 가공/조립 표준선 (기본 100%)"
+        "desc": "기타 가공/조립 표준선 (상한 100%)"
     }
 }
 
@@ -99,7 +97,7 @@ with st.sidebar:
 
     st.divider()
 
-    # [1] 공정 선택 (선택 시 효율, 임율, 현실화 경비율이 한꺼번에 바뀜)
+    # [1] 공정 선택
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox("공정 / 업종 선택", industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
@@ -137,11 +135,11 @@ with st.sidebar:
 
     st.divider()
 
-    # [5] 원가 가산율 통제 기준 (업종별 현실화 간접경비율 탑재)
-    st.subheader("📑 원가 가산율 통제 기준")
+    # [5] 원가 가산율 통제 기준
+    st.subheader("📑 원가 가산율 통제 기준 (상한선)")
     
     std_mat_manage_rate = st.slider(
-        "재료관리비율 (%)",
+        "재료관리비율 상한 (%)",
         min_value=0.0,
         max_value=10.0,
         value=2.0,
@@ -149,9 +147,8 @@ with st.sidebar:
         help="순재료비의 2.0% 기준 (입고운반비/보관비 중복 배제 필수)"
     )
 
-    # 업종별 현실화된 기본값 자동 반영
     std_overhead_rate = st.slider(
-        f"간접제조경비율 (노무비 대비 %)",
+        "간접제조경비율 상한 (노무비 대비 %)",
         min_value=20,
         max_value=350,
         value=cfg["overhead_rate"],
@@ -161,21 +158,21 @@ with st.sidebar:
     st.caption(f"ℹ️ {cfg['desc']}")
 
     std_admin_rate = st.slider(
-        "일반관리비율 (%)",
+        "일반관리비율 상한 (%)",
         min_value=1.0,
         max_value=25.0,
         value=15.0,
         step=0.5,
-        help="제조원가(재료비+노무비+경비) 대비 본사 관리비 (기본 15.0%)"
+        help="제조원가 대비 본사 관리비 상한 (기본 15.0%)"
     )
 
     std_profit_rate = st.slider(
-        "영업이익율 (%)",
+        "영업이익율 상한 (%)",
         min_value=1.0,
         max_value=20.0,
         value=10.0,
         step=0.5,
-        help="가공비(노무비+경비)+일반관리비 대비 영업이익 (기본 10.0%, 순재료비 이윤 배제)"
+        help="가공비+일반관리비 대비 영업이익 상한 (기본 10.0%, 순재료비 이윤 배제)"
     )
 
     st.divider()
@@ -245,15 +242,18 @@ if image_bytes:
                         "[당사 사정 원가 통제 기준]",
                         f"1. 적용 공정: {selected_industry} (특성: {cfg['desc']})",
                         f"2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 생산성 저하 전가로 삭감)",
-                        f"3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감)",
+                        f"3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)",
                         f"4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 준비시간 배제)",
-                        f"5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 (입고운반비 중복 반영 엄격 배제)",
-                        f"6. 간접제조경비(기계경비): 노무비의 {std_overhead_rate}% 적용",
-                        "   - 핵심 지침: 프레스/사출/가공/다이캐스팅/소결 등 고가 장치 설비는 감가상각과 동력비가 발생하므로 일률적 50% 삭감을 금지하고, 업종별 현실화된 장치경비율 및 설비효율({std_eff}%) 정상화에 따른 비례 삭감 적용",
-                        "   - 만약 제출된 기계경비가 과다한 경우 '설비 감가상각 내용연수(5년) 경과 여부 소명'을 공식 지적할 것",
-                        f"7. 일반관리비율: 제조원가의 {std_admin_rate}% 이하",
-                        f"8. 영업이익율: (가공비+일반관리비)의 {std_profit_rate}% 이하 (순재료비에 이윤 가산 엄격 배제)",
+                        f"5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 적용 (입고운반비 중복 반영 엄격 배제)",
+                        f"6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사가 제출한 경비율(또는 기계경비 금액)이 당사 기준보다 낮다면 '협력사 제출 비율/금액'을 그대로 인정하여 유지할 것.",
+                        f"7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면(예: 5% 등) 협력사 제출 비율을 그대로 유지할 것 (Min 원칙).",
+                        f"8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율을 그대로 유지할 것 (순재료비 이윤 배제).",
                         f"9. 스크랩 단가 검증: {scrap_criteria_text}",
+                        "",
+                        "[★ 절대 사정 원칙 - 단가 역전 금지]",
+                        "- 본 원가 검토의 목적은 '과다 청구 항목의 삭감'입니다.",
+                        "- 협력사가 이미 당사 기준선보다 낮게 책정한 착한 항목(낮은 경비율, 낮은 일반관리비율 등)을 당사 기준으로 강제 상향 적용하여, 총 사정 단가가 협력사 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.",
+                        "- 사정 단가는 협력사 제출 단가 이하(<=)로만 도출되어야 합니다.",
                         "",
                         "[출력 규칙]",
                         "반드시 첫 부분에 START_JSON 과 END_JSON 태그 사이에 아래 구조의 순수 JSON 데이터만 넣으세요.",
@@ -266,18 +266,18 @@ if image_bytes:
                                 {"category": "1. 재료비", "item": "투입재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
                                 {"category": "1. 재료비", "item": "스크랩환입(-)", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
                                 {"category": "1. 재료비", "item": "순재료비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "1. 재료비", "item": "재료관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_mat_manage_rate}% 적용(운반비 중복 배제)"},
-                                {"category": "2. 가공비", "item": "직접노무비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"임율 {std_labor_rate}원/초, 효율 {std_eff}%"},
-                                {"category": "2. 가공비", "item": "간접제조경비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"장치경비율 {std_overhead_rate}% 적용"},
+                                {"category": "1. 재료비", "item": "재료관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_mat_manage_rate}% 이하 적용"},
+                                {"category": "2. 가공비", "item": "직접노무비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"임율 {std_labor_rate}원/초, 효율 {std_eff}% 기준"},
+                                {"category": "2. 가공비", "item": "간접제조경비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
                                 {"category": "3. 제조원가", "item": "제조원가 합계", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""},
-                                {"category": "4. 일반관리비", "item": "일반관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_admin_rate}% 적용"},
-                                {"category": "5. 영업이익", "item": "영업이익", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": f"{std_profit_rate}% 적용"},
+                                {"category": "4. 일반관리비", "item": "일반관리비", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
+                                {"category": "5. 영업이익", "item": "영업이익", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "협력사 제출비율 유지 또는 상한 적용"},
                                 {"category": "6. 최종단가", "item": "최종 견적 단가", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": "당사 사정 목표가"}
                             ]
                         }, ensure_ascii=False),
                         "END_JSON",
                         "",
-                        "END_JSON 이후에는 구체적 사정 논리와 협력사 통보용 공식 공문 문구를 마크다운으로 작성하세요. (기계경비와 관련하여 설비 감가상각 완료 여부 소명 요청 문구 포함)"
+                        "END_JSON 이후에는 구체적 사정 논리와 협력사 통보용 공식 공문 문구를 마크다운으로 작성하세요."
                     ]
                     prompt = "\n".join(prompt_parts)
 
