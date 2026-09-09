@@ -40,7 +40,6 @@ INDUSTRY_CONFIG = {
 with st.sidebar:
     st.header("⚙️ 분석 및 사정 기준 설정")
 
-    # Secrets 등록 여부 자동 확인
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
         st.success("🔑 API Key 자동 연동 완료")
@@ -49,12 +48,10 @@ with st.sidebar:
 
     st.divider()
 
-    # [1] 공정 선택
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox("공정 / 업종 선택", industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
 
-    # [2] 설비 효율 기준
     std_eff = st.slider(
         f"설비 효율 기준 (권장 Max: {cfg['max_eff']}%)",
         min_value=50,
@@ -63,7 +60,6 @@ with st.sidebar:
         step=5
     )
 
-    # [3] 표준 임율 기준
     st.markdown(f"**중기중앙회 공인 직종: {cfg['job_name']}**")
     std_labor_rate = st.number_input(
         "적용 임율 기준 (원/초)",
@@ -73,7 +69,6 @@ with st.sidebar:
         step=0.1
     )
 
-    # [4] 여유율 (ET율)
     std_et_rate = st.slider(
         "여유율 / ET율 기준 (%)",
         min_value=0,
@@ -84,7 +79,6 @@ with st.sidebar:
 
     st.divider()
 
-    # [5] 원가 가산율 통제 기준
     st.subheader("📑 원가 가산율 통제 기준")
     std_mat_manage_rate = st.slider(
         "재료관리비율 (%)",
@@ -120,7 +114,6 @@ with st.sidebar:
 
     st.divider()
 
-    # [6] 스크랩 검증 방식
     scrap_mode = st.radio("스크랩 단가 검증 방식", ["실거래가 기준 (원/kg)", "신재 대비 인정율 (%)"], index=0)
     if scrap_mode == "실거래가 기준 (원/kg)":
         target_scrap_price = st.number_input("당사 실 스크랩 매각 단가 (원/kg)", min_value=0, value=12500, step=500)
@@ -187,15 +180,15 @@ if image_bytes:
                         f"2. 기준 설비 효율: {std_eff}% 이상 필수 (미달 시 생산성 저하 전가로 삭감)",
                         f"3. 적용 임율 기준: {std_labor_rate} 원/초 (중소기업중앙회 공인 노임단가 초과분 삭감)",
                         f"4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영 시간 배제)",
-                        f"5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 (입고운반비 중복 배제)",
+                        f"5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 (원자재 입고운반비 중복 배제)",
                         f"6. 간접제조경비율: 직접노무비의 {std_overhead_rate}% 이하",
                         f"7. 일반관리비율: 제조원가의 {std_admin_rate}% 이하",
-                        f"8. 영업이익율: (가공비+일반관리비)의 {std_profit_rate}% 이하 (순재료비 이윤 배제)",
+                        f"8. 영업이익율: (가공비+일반관리비)의 {std_profit_rate}% 이하 (순재료비 이윤 가산 엄격 배제)",
                         f"9. 스크랩 단가 검증: {scrap_criteria_text}",
                         "",
                         "[출력 규칙]",
                         "반드시 첫 부분에 START_JSON 과 END_JSON 태그 사이에 아래 구조의 순수 JSON 데이터만 넣으세요.",
-                        "금액/수치는 쉼표 없는 순수 숫자여야 합니다.",
+                        "금액 및 비율 수치는 쉼표 없이 순수 숫자여야 합니다.",
                         "START_JSON",
                         json.dumps({
                             "item_info": {"supplier": "협력사명", "part_name": "품명", "part_no": "품번"},
@@ -230,39 +223,46 @@ if image_bytes:
                             )
                             res_text = response.text
 
+                            # JSON 파싱
+                            parsed = False
                             if "START_JSON" in res_text and "END_JSON" in res_text:
-                                raw_json = res_text.split("START_JSON")[1].split("END_JSON")[0].strip()
-                                raw_json = re.sub(r"^```json\s*", "", raw_json)
-                                raw_json = re.sub(r"^```\s*", "", raw_json)
-                                raw_json = re.sub(r"\s*```$", "", raw_json)
-                                
-                                data = json.loads(raw_json)
+                                try:
+                                    raw_json = res_text.split("START_JSON")[1].split("END_JSON")[0].strip()
+                                    raw_json = re.sub(r"^```json\s*", "", raw_json)
+                                    raw_json = re.sub(r"^```\s*", "", raw_json)
+                                    raw_json = re.sub(r"\s*```$", "", raw_json)
+                                    data = json.loads(raw_json)
 
-                                comp = data["comparison"]
-                                c_sub, c_adj, c_diff, c_rate = st.columns(4)
-                                c_sub.metric("협력사 제출가", f"{comp['submitted_price']:,.1f}원")
-                                c_adj.metric("당사 사정 목표가", f"{comp['adjusted_price']:,.1f}원")
-                                c_diff.metric("절감 가능액", f"-{comp['cost_reduction']:,.1f}원")
-                                c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
+                                    comp = data["comparison"]
+                                    c_sub, c_adj, c_diff, c_rate = st.columns(4)
+                                    c_sub.metric("협력사 제출가", f"{comp['submitted_price']:,.1f}원")
+                                    c_adj.metric("당사 사정 목표가", f"{comp['adjusted_price']:,.1f}원")
+                                    c_diff.metric("절감 가능액", f"-{comp['cost_reduction']:,.1f}원")
+                                    c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
 
-                                st.markdown("#### 📋 표준 견적 대조 원가계산서")
-                                df = pd.DataFrame(data["cost_breakdown"])
-                                df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
-                                st.dataframe(df, use_container_width=True, hide_index=True)
+                                    st.markdown("#### 📋 표준 견적 대조 원가계산서")
+                                    df = pd.DataFrame(data["cost_breakdown"])
+                                    df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
+                                    st.dataframe(df, use_container_width=True, hide_index=True)
 
-                                csv_data = df.to_csv(index=False, encoding="utf-8-sig")
-                                part_code = data['item_info'].get('part_no') or '견적'
-                                st.download_button(
-                                    label="📥 사정 원가계산서 엑셀(CSV) 다운로드",
-                                    data=csv_data,
-                                    file_name=f"사정원가계산서_{part_code}.csv",
-                                    mime="text/csv"
-                                )
-                                st.divider()
+                                    # CSV 다운로드 파일명을 ASCII 안전한 영문으로 지정하여 인코딩 오류 원천 차단
+                                    csv_data = df.to_csv(index=False, encoding="utf-8-sig")
+                                    st.download_button(
+                                        label="📥 사정 원가계산서 엑셀(CSV) 다운로드",
+                                        data=csv_data,
+                                        file_name="Target_Cost_Result.csv",
+                                        mime="text/csv"
+                                    )
+                                    st.divider()
 
-                                comment_text = res_text.split("END_JSON")[1].strip()
-                                st.markdown(comment_text)
-                            else:
+                                    comment_text = res_text.split("END_JSON")[1].strip()
+                                    st.markdown(comment_text)
+                                    parsed = True
+                                except Exception:
+                                    parsed = False
+
+                            # 파싱 실패 시에도 마크다운 텍스트 전문은 정상 출력
+                            if not parsed:
                                 st.markdown(res_text)
 
                             break
