@@ -3,6 +3,7 @@ import io
 import time
 import pandas as pd
 import json
+import re
 from google import genai
 from google.genai import types
 from streamlit_paste_button import paste_image_button
@@ -255,13 +256,13 @@ if image_bytes:
                     - 협력사가 이미 당사 기준선보다 낮게 책정한 착한 항목을 강제로 상향하여 총 사정 단가가 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
 
                     [출력 형식 가이드]
-                    반드시 유효한 JSON 형식으로만 응답해야 합니다. 모든 금액/수치는 따옴표 없는 숫자(float 또는 int)여야 합니다.
+                    반드시 유효한 JSON 형식으로만 응답해야 합니다. audit_comment 내부의 줄바꿈은 반드시 이스케이프(\\\\n) 처리하세요.
                     키 구조:
                     - item_info: supplier, part_name, part_no
                     - comparison: submitted_price, adjusted_price, cost_reduction, reduction_rate
                     - cost_breakdown: 배열 형태, 각 요소는 category, item, submitted, adjusted, diff, note
                       (항목: 투입재료비, 스크랩환입(-), 순재료비, 재료관리비, 직접노무비, 간접제조경비, 제조원가 합계, 일반관리비, 영업이익, 최종 견적 단가)
-                    - audit_comment: 스크랩 재활용성 판별 근거, 세부 삭감 사유, 협력사 발송용 공식 공문 문구를 마크다운 문자열로 기술.
+                    - audit_comment: 스크랩 재활용성 판별 근거, 세부 삭감 사유, 협력사 발송용 공식 공문 문구
                     """
 
                     for attempt in range(3):
@@ -277,7 +278,16 @@ if image_bytes:
                                 )
                             )
                             res_text = response.text.strip()
-                            data = json.loads(res_text)
+                            
+                            # strict=False 적용으로 줄바꿈/탭 등의 제어 문자 에러 원천 차단
+                            try:
+                                data = json.loads(res_text, strict=False)
+                            except Exception:
+                                # 백틱 코드블록이 혹시라도 포함되었을 경우 제거 후 재시도
+                                clean_text = re.sub(r"^```json\s*", "", res_text)
+                                clean_text = re.sub(r"^```\s*", "", clean_text)
+                                clean_text = re.sub(r"\s*```$", "", clean_text)
+                                data = json.loads(clean_text, strict=False)
 
                             # 상단 요약 카드
                             comp = data["comparison"]
