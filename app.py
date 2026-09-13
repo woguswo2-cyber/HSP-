@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 st.title("📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적 산출")
-st.caption("공정별 설비효율, 기계경비 배부율, 재질별 스크랩 재활용 가능 여부를 자동 판별하여 최적 사정 견적을 도출합니다.")
+st.caption("견적서 갑지(총괄)와 을지(세부내역) 등 복수 이미지를 교차 검증하여 표준 사정 원가계산서를 도출합니다.")
 
 # ---------------------------------------------------------
 # 2. 공정별 표준 데이터 맵
@@ -105,8 +105,7 @@ with st.sidebar:
         min_value=50,
         max_value=95,
         value=cfg["max_eff"],
-        step=5,
-        help="공정 선택 시 권장 상한 효율(Max)로 자동 세팅됩니다."
+        step=5
     )
 
     st.markdown(f"**중기중앙회 공인 직종: {cfg['job_name']}**")
@@ -116,7 +115,7 @@ with st.sidebar:
         max_value=15.0,
         value=cfg["sec_rate"],
         step=0.1,
-        help="중기중앙회 임금조사 1일 8시간(28,800초) 기준 초당 임율"
+        help="중기중앙회 통계 1일 8시간(28,800초) 기준 초당 임율"
     )
 
     std_et_rate = st.slider(
@@ -124,14 +123,12 @@ with st.sidebar:
         min_value=0,
         max_value=35,
         value=10,
-        step=1,
-        help="양산 표준은 10%이며, 구형 기종이나 소량 다품종은 15~25% 수준 인정"
+        step=1
     )
 
     st.divider()
-
     st.subheader("📑 원가 가산율 통제 기준 (상한선)")
-    
+
     std_mat_manage_rate = st.slider(
         "재료관리비율 상한 (%)",
         min_value=0.0,
@@ -156,8 +153,7 @@ with st.sidebar:
         min_value=1.0,
         max_value=25.0,
         value=15.0,
-        step=0.5,
-        help="제조원가 대비 본사 관리비 상한 (기본 15.0%)"
+        step=0.5
     )
 
     std_profit_rate = st.slider(
@@ -165,12 +161,10 @@ with st.sidebar:
         min_value=1.0,
         max_value=20.0,
         value=10.0,
-        step=0.5,
-        help="가공비+일반관리비 대비 영업이익 상한 (기본 10.0%, 순재료비 이윤 배제)"
+        step=0.5
     )
 
     st.divider()
-
     scrap_mode = st.radio("스크랩 단가 검증 방식", ["실거래가 기준 (원/kg)", "신재 대비 인정율 (%)"], index=0)
     if scrap_mode == "실거래가 기준 (원/kg)":
         target_scrap_price = st.number_input("당사 실 스크랩 매각 단가 (원/kg)", min_value=0, value=12500, step=500)
@@ -180,43 +174,63 @@ with st.sidebar:
         scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}% 이상 반영 (재활용/매각 가능 소재에 한함)"
 
 # ---------------------------------------------------------
-# 4. 이미지 입력 영역
+# 4. 복수 이미지 입력 영역 (갑지, 을지 등)
 # ---------------------------------------------------------
-st.write("### 📂 검토할 원가계산서 입력")
-tab1, tab2 = st.tabs(["📋 캡처본 바로 붙여넣기 (Ctrl+V)", "📁 파일 직접 올리기"])
+if "clipboard_images" not in st.session_state:
+    st.session_state.clipboard_images = []
 
-image_bytes = None
-mime_type = "image/png"
+st.write("### 📂 검토할 원가계산서 입력 (갑지, 을지 등 여러 장 업로드 가능)")
+tab1, tab2 = st.tabs(["📋 캡처본 연속 붙여넣기 (Ctrl+V)", "📁 파일 여러 장 선택 올리기"])
+
+image_list = []
 
 with tab1:
-    st.write("화면을 캡처한 뒤 아래 버튼을 누르세요.")
-    paste_result = paste_image_button(
-        label="📋 클립보드 이미지 붙여넣기",
-        background_color="#1F4E79",
-        hover_background_color="#2F5597",
-        text_color="#FFFFFF"
-    )
+    col_btn, col_clear = st.columns([2, 1])
+    with col_btn:
+        paste_result = paste_image_button(
+            label="📋 현재 캡처본 추가하기",
+            background_color="#1F4E79",
+            hover_background_color="#2F5597",
+            text_color="#FFFFFF"
+        )
+    with col_clear:
+        if st.button("🗑️ 붙여넣은 이미지 초기화"):
+            st.session_state.clipboard_images = []
+            st.rerun()
+
     if paste_result.image_data is not None:
         buf = io.BytesIO()
         paste_result.image_data.save(buf, format="PNG")
-        image_bytes = buf.getvalue()
-        mime_type = "image/png"
+        new_bytes = buf.getvalue()
+        if not st.session_state.clipboard_images or st.session_state.clipboard_images[-1]["bytes"] != new_bytes:
+            st.session_state.clipboard_images.append({
+                "bytes": new_bytes,
+                "mime": "image/png"
+            })
+
+    if st.session_state.clipboard_images:
+        image_list = st.session_state.clipboard_images
+        st.info(f"현재 총 {len(image_list)}장의 캡처 이미지가 등록되었습니다.")
 
 with tab2:
-    uploaded_file = st.file_uploader("이미지 파일 선택 (PNG, JPG)", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        image_bytes = uploaded_file.getvalue()
-        mime_type = uploaded_file.type
+    uploaded_files = st.file_uploader(
+        "견적서 파일 선택 (갑지, 을지 등 여러 파일 동시 선택 가능)",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True
+    )
+    if uploaded_files:
+        image_list = [{"bytes": f.getvalue(), "mime": f.type} for f in uploaded_files]
 
 # ---------------------------------------------------------
 # 5. 분석 실행 및 사정 견적서 출력
 # ---------------------------------------------------------
-if image_bytes:
+if image_list:
     col1, col2 = st.columns([1, 1], gap="medium")
 
     with col1:
-        st.subheader("📄 대상 원가계산서 원본")
-        st.image(image_bytes, use_container_width=True)
+        st.subheader(f"📄 대상 견적서 원본 (총 {len(image_list)}장)")
+        for idx, img_item in enumerate(image_list):
+            st.image(img_item["bytes"], caption=f"페이지 {idx + 1}", use_container_width=True)
 
     with col2:
         st.subheader("🔍 타당성 검토 및 당사 사정 견적")
@@ -224,66 +238,64 @@ if image_bytes:
             st.warning("👈 왼쪽 사이드바에 Gemini API Key를 입력하거나 Secrets에 등록해주세요.")
         else:
             if st.button("🚀 사정 원가계산서 자동 산출", type="primary"):
-                spin_msg = "재질/스크랩 재활용성 판별 및 표준 사정 견적 산출 중..."
+                spin_msg = f"총 {len(image_list)}장의 견적서(갑지/을지) 교차 검증 및 사정 원가계산서 생성 중..."
                 with st.spinner(spin_msg):
                     client = genai.Client(api_key=api_key)
 
+                    # 복수 이미지를 API 파트로 구성
+                    contents = []
+                    for img_item in image_list:
+                        contents.append(types.Part.from_bytes(data=img_item["bytes"], mime_type=img_item["mime"]))
+
                     prompt = f"""
                     당신은 자동차 부품 및 정밀제조업 구매팀의 원가 분석 수석관입니다.
-                    제출된 원가계산서 이미지를 정밀 판독하여 과다 계상분을 삭감하고, 공정 및 재질 특성을 반영한 당사 표준 기준에 맞추어 '정상 사정 원가계산서'를 재계산하세요.
+                    제공된 복수의 원가계산서 이미지(갑지-총괄 요약표, 을지-공정/재료 세부명세 등)를 종합 대조하여 과다 계상분을 삭감하고 '정상 사정 원가계산서'를 재계산하세요.
+
+                    [갑지/을지 교차 분석 핵심 지침]
+                    1. 을지(세부내역)의 투입단중, C/T, 임율, 기계경비, 스크랩 환입을 정밀 검증하여 적정 제조원가를 도출하세요.
+                    2. 을지의 합계 금액과 갑지(총괄표)의 재료비, 가공비, 일반관리비, 이윤이 일치하는지 대조하고 중복 계상(운반비, 관리비 등)을 적발하세요.
 
                     [당사 사정 원가 통제 기준]
                     1. 적용 공정: {selected_industry} (특성: {cfg['desc']})
-                    2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 생산성 저하 전가로 삭감)
-                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중기중앙회 공인 노임단가 초과분 삭감, 단 협력사가 이보다 낮은 임율을 썼다면 협력사 임율 유지)
-                    4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 비효율 준비시간 배제)
-                    5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 적용 (입고운반비/하차비/보관비 중복 반영 엄격 배제)
-                    6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사가 제출한 경비율(또는 기계경비 금액)이 당사 기준보다 낮다면 '협력사 제출 비율/금액'을 그대로 인정하여 유지할 것.
-                    7. 일반관리비율: 당사 상한 기준은 {std_admin_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율 유지 (Min 원칙).
-                    8. 영업이익율: 당사 상한 기준은 {std_profit_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출 비율 유지 (순재료비 이윤 배제).
+                    2. 기준 설비 효율: {std_eff}% 이상 필수 (원가서 기재 효율 미달 시 삭감)
+                    3. 적용 임율 기준: {std_labor_rate} 원/초 (중기중앙회 공인 노임단가 초과분 삭감, 단 협력사가 더 낮은 임율을 적었다면 협력사 값 유지)
+                    4. 여유율(ET율): 기준 {std_et_rate}% (초과 반영된 준비시간 배제)
+                    5. 재료관리비율: 순재료비의 {std_mat_manage_rate}% 이하 (입고운반비/보관비 중복 반영 엄격 배제)
+                    6. 간접제조경비율: 당사 상한 기준은 {std_overhead_rate}%이나, 협력사 제출 비율이 더 낮다면 협력사 제출치 유지.
+                    7. 일반관리비율: 당사 상한 기준 {std_admin_rate}%와 협력사 제출 비율 중 낮은 비율(Min) 적용.
+                    8. 영업이익율: 당사 상한 기준 {std_profit_rate}%와 협력사 제출 비율 중 낮은 비율(Min) 적용 (순재료비 이윤 배제).
+                    9. 스크랩 검증: {scrap_criteria_text}
+                       - 복합수지(PP TD20%, PA66 GF30% 등)로 분쇄재 재사용이 불가한 사출품은 투입량 전체를 재료비로 인정하고 스크랩 환입은 0원 처리.
+                       - 금속 프레스/가공/다이캐스팅은 스크랩 매각 환입 필수 반영.
 
-                    [★ 스크랩 재활용/재사용 가능 여부 판별 규칙 (핵심)]
-                    - 원가계산서에 기재된 '재질명(GRADE)'과 '공정'을 분석하여 스크랩 재사용 여부를 스스로 판정하세요.
-                      1) 사출/플라스틱 공정:
-                         - 복합수지(PP TD20%, PA66 GF30% 등 충진재/유리섬유 함유) 또는 사출 규격상 분쇄재(Regrind) 혼용이 금지되어 러너(Gate/Runner) 재사용이 불가능한 경우:
-                           -> GATE/러너를 포함한 **'원재료 투입량(투입중량) 전체'를 순재료비로 인정**하고, 스크랩 환입은 0원으로 처리.
-                         - 단, 핫러너(Hot Runner) 적용이 명시되어 러너가 발생하지 않거나 분쇄재 재사용이 허용되는 일반 범용수지의 경우 NET 중량 기준으로 계산.
-                      2) 프레스/금속/절삭가공/다이캐스팅 공정:
-                         - 잔재(Scrap)를 고철/비철 스크랩으로 매각 회수가 가능하므로 **반드시 스크랩 환입을 반영** ({scrap_criteria_text} 기준 적용).
-
-                    [★ 절대 원칙 - 단가 역전 금지]
-                    - 본 원가 검토의 목적은 '과다 청구 항목의 삭감'입니다.
-                    - 협력사가 이미 당사 기준선보다 낮게 책정한 착한 항목을 강제로 상향하여 총 사정 단가가 제출 단가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
+                    [절대 원칙 - 단가 역전 금지]
+                    - 협력사가 당사 기준보다 낮게 책정한 항목을 강제로 올려 총 사정가가 협력사 제출가보다 커지는 역전 현상을 절대 발생시키지 마십시오.
 
                     [출력 형식 가이드]
-                    반드시 유효한 JSON 형식으로만 응답해야 합니다. audit_comment 내부의 줄바꿈은 반드시 이스케이프(\\\\n) 처리하세요.
+                    반드시 유효한 JSON 형식으로만 응답하세요. audit_comment 내부 줄바꿈은 이스케이프(\\\\n) 처리하세요.
                     키 구조:
                     - item_info: supplier, part_name, part_no
                     - comparison: submitted_price, adjusted_price, cost_reduction, reduction_rate
                     - cost_breakdown: 배열 형태, 각 요소는 category, item, submitted, adjusted, diff, note
                       (항목: 투입재료비, 스크랩환입(-), 순재료비, 재료관리비, 직접노무비, 간접제조경비, 제조원가 합계, 일반관리비, 영업이익, 최종 견적 단가)
-                    - audit_comment: 스크랩 재활용성 판별 근거, 세부 삭감 사유, 협력사 발송용 공식 공문 문구
+                    - audit_comment: 갑지/을지 대조 결과, 세부 삭감 사유, 협력사 전달용 공식 공문 문구
                     """
+                    contents.append(prompt)
 
                     for attempt in range(3):
                         try:
                             response = client.models.generate_content(
                                 model="gemini-3.6-flash",
-                                contents=[
-                                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                                    prompt
-                                ],
+                                contents=contents,
                                 config=types.GenerateContentConfig(
                                     response_mime_type="application/json"
                                 )
                             )
                             res_text = response.text.strip()
-                            
-                            # strict=False 적용으로 줄바꿈/탭 등의 제어 문자 에러 원천 차단
+
                             try:
                                 data = json.loads(res_text, strict=False)
                             except Exception:
-                                # 백틱 코드블록이 혹시라도 포함되었을 경우 제거 후 재시도
                                 clean_text = re.sub(r"^```json\s*", "", res_text)
                                 clean_text = re.sub(r"^```\s*", "", clean_text)
                                 clean_text = re.sub(r"\s*```$", "", clean_text)
@@ -298,7 +310,7 @@ if image_bytes:
                             c_rate.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
 
                             # 표준 원가계산서 대조 테이블
-                            st.markdown("#### 📋 표준 견적 대조 원가계산서")
+                            st.markdown("#### 📋 표준 견적 대조 원가계산서 (갑지/을지 종합)")
                             df = pd.DataFrame(data["cost_breakdown"])
                             df.columns = ["구분", "항목", "협력사 제출", "당사 사정가", "차액(절감)", "사정 기준 및 사유"]
                             st.dataframe(df, use_container_width=True, hide_index=True)
