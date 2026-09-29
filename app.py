@@ -12,8 +12,8 @@ st.set_page_config(page_title="Cost Sheet Audit System", page_icon="📊", layou
 # 2. 다국어 텍스트 사전 및 공정 매핑
 I18N = {
     "한국어": {
-        "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적",
-        "caption": "공정별 설비효율, 기계경비 배부율, SMBS 환율, 다중 견적서(갑/을지) 교차검증 및 차종/품번 이력 관리를 지원합니다.",
+        "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 목표가(Target) 역산 산출",
+        "caption": "설비효율, 기계경비 배부율, SMBS 환율, 다중 견적서(갑/을지) 교차검증 및 목표단가 역설계(Reverse Engineering)를 지원합니다.",
         "settings": "⚙️ 분석 기준 설정",
         "api_auto": "🔑 API Key 자동 연동 완료",
         "api_input": "Gemini API Key 입력",
@@ -26,6 +26,8 @@ I18N = {
         "v_type": "차종 (Project)",
         "p_no": "품번 (Part No.)",
         "p_name": "품명 (Part Name)",
+        "target_p_label": "🎯 목표 타겟 단가 (Target Price, 선택)",
+        "target_p_help": "입력 시 목표가를 맞추기 위해 어느 원가 항목에서 얼마를 깎아야 하는지 자동 역산 배분합니다. (0 입력 시 표준 사정)",
         "proc_sel": "공정 선택",
         "eff_lbl": "설비 효율 기준 (권장 Max: {eff}%)",
         "labor_job": "공인 직종: {job}",
@@ -37,7 +39,7 @@ I18N = {
         "admin_r": "일반관리비율 상한 (%)",
         "profit_r": "영업이익율 상한 (%)",
         "scrap_lbl": "실 스크랩 매각가 (원/kg)",
-        "tab_audit": "🔍 견적 분석 및 사정",
+        "tab_audit": "🔍 견적 분석 및 목표가 산출",
         "tab_history": "🕒 사정 이력 대시보드",
         "up_hdr": "📂 견적서 등록 (갑지/을지 다중 등록 가능)",
         "paste_tab": "📋 클립보드 붙여넣기",
@@ -47,15 +49,15 @@ I18N = {
         "count_msg": "등록된 캡처본: {count}장",
         "file_up_lbl": "이미지 파일 선택 (다중 선택 가능)",
         "orig_hdr": "📄 대상 견적서 ({count}장)",
-        "res_hdr": "🔍 분석 및 사정 견적",
+        "res_hdr": "🔍 분석 및 사정 견적 (타겟 역산)",
         "api_warn": "👈 사이드바에 API Key를 설정해주세요.",
         "exec_b": "🚀 사정 원가계산서 산출",
         "sub_p": "협력사 제출가",
-        "adj_p": "당사 사정가",
+        "adj_p": "당사 사정(목표)가",
         "diff_p": "절감 가능액",
         "diff_r": "절감율",
-        "tbl_hdr": "📋 표준 견적 대조표",
-        "cols": ["구분", "항목", "제출가", "사정가", "차액", "사정 기준 및 사유"],
+        "tbl_hdr": "📋 표준 견적 대조표 (목표가 역산 배분)",
+        "cols": ["구분", "항목", "제출가", "사정(목표)가", "차액(절감)", "사정 기준 및 네고 타격 포인트"],
         "dl_csv": "📥 사정 원가계산서 CSV 다운로드",
         "hist_hdr": "📊 부품/차종별 누적 원가 사정 이력",
         "hist_search_v": "차종 검색",
@@ -63,7 +65,7 @@ I18N = {
         "hist_search_s": "협력사(업체명) 검색",
         "hist_dl_csv": "📥 전체 이력 CSV 다운로드",
         "hist_empty": "저장된 사정 이력이 없습니다. 견적서 분석을 실행하면 자동으로 누적 기록됩니다.",
-        "prompt_lang": "한국어로 상세하고 전문적인 원가 검토 의견 및 협력사 공식 네고 문구를 작성하세요.",
+        "prompt_lang": "한국어로 상세하고 전문적인 원가 검토 의견 및 협력사 공식 네고 공문 문구를 작성하세요.",
         "proc_options": {
             "프레스": "프레스",
             "가공": "가공",
@@ -76,8 +78,8 @@ I18N = {
         }
     },
     "English": {
-        "title": "📊 Supplier Cost Sheet Audit & Target Cost System",
-        "caption": "Supports equipment efficiency, overhead allocation, SMBS FX rates, multi-sheet audit, and project/part history tracking.",
+        "title": "📊 Supplier Cost Sheet Audit & Target Cost Engineering System",
+        "caption": "Supports equipment efficiency, overhead allocation, SMBS FX rates, multi-sheet audit, and Target Price reverse allocation.",
         "settings": "⚙️ Audit Configuration",
         "api_auto": "🔑 API Key Automatically Connected",
         "api_input": "Enter Gemini API Key",
@@ -90,7 +92,9 @@ I18N = {
         "v_type": "Vehicle Model / Project",
         "p_no": "Part Number (P/N)",
         "p_name": "Part Name",
-        "proc_sel": "Select Manufacturing Process",
+        "target_p_label": "🎯 Target Price (Optional)",
+        "target_p_help": "If specified, reverse-engineers cost items to reach target price. (0 = Standard Audit)",
+        "proc_sel": "Manufacturing Process",
         "eff_lbl": "Equipment Efficiency Target (Max: {eff}%)",
         "labor_job": "Labor Category: {job}",
         "labor_rate": "Applied Labor Rate (KRW/sec)",
@@ -118,8 +122,8 @@ I18N = {
         "adj_p": "Target Cost",
         "diff_p": "Savings Potential",
         "diff_r": "Savings Ratio",
-        "tbl_hdr": "📋 Standard Cost Sheet Audit Comparison",
-        "cols": ["Category", "Cost Item", "Submitted", "Target Cost", "Variance", "Audit Remarks"],
+        "tbl_hdr": "📋 Standard Cost Sheet Audit Comparison (Target Reverse-Allocation)",
+        "cols": ["Category", "Cost Item", "Submitted", "Target Cost", "Variance", "Audit Rationale & Action Plan"],
         "dl_csv": "📥 Download Target Cost Sheet (CSV)",
         "hist_hdr": "📊 Cumulative Cost Audit & Savings History",
         "hist_search_v": "Filter by Project",
@@ -127,7 +131,7 @@ I18N = {
         "hist_search_s": "Filter by Supplier",
         "hist_dl_csv": "📥 Download All History (CSV)",
         "hist_empty": "No audit history found. Audited quotes will be automatically recorded here.",
-        "prompt_lang": "Provide the complete breakdown rationale and negotiation memo in ENGLISH.",
+        "prompt_lang": "Provide the complete breakdown rationale, cost item cuts, and negotiation memo in ENGLISH.",
         "proc_options": {
             "프레스": "Press (Stamping)",
             "가공": "Machining (CNC)",
@@ -140,8 +144,8 @@ I18N = {
         }
     },
     "中文": {
-        "title": "📊 供应商报价/成本核算单审查与目标成本系统",
-        "caption": "支持工艺稼动率、机械间接费分摊、首尔外汇中介基准汇率、多页报价交叉验证及车型/零件履历管理。",
+        "title": "📊 供应商报价/成本核算单审查与目标成本(Target)反向核算系统",
+        "caption": "支持工艺稼动率、机械间接费分摊、首尔外汇中介基准汇率、多页报价交叉验证及目标价反向分解设计。",
         "settings": "⚙️ 审查及目标成本核算基准设置",
         "api_auto": "🔑 API Key 自动绑定成功",
         "api_input": "输入 Gemini API Key",
@@ -154,6 +158,8 @@ I18N = {
         "v_type": "开发车型 / 项目代码 (Project)",
         "p_no": "零件号 (Part No.)",
         "p_name": "零件名称 (Part Name)",
+        "target_p_label": "🎯 目标采购单价 (Target Price, 可选)",
+        "target_p_help": "输入目标价时，系统自动反向倒推各成本明细项的削减额及技术降本措施。(输入0则为常规核算)",
         "proc_sel": "制造工艺选择",
         "eff_lbl": "设备效率上限基准 (建议 Max: {eff}%)",
         "labor_job": "官方标准工种: {job}",
@@ -165,7 +171,7 @@ I18N = {
         "admin_r": "一般管理费率上限 (%)",
         "profit_r": "利润率上限 (%)",
         "scrap_lbl": "废料实际变卖单价 (韩元/kg)",
-        "tab_audit": "🔍 报价审查与核算",
+        "tab_audit": "🔍 报价审查与目标价核算",
         "tab_history": "🕒 核价履历管理看板",
         "up_hdr": "📂 录入审查报价单 (支持多页/附件同时比对)",
         "paste_tab": "📋 剪贴板截图粘贴",
@@ -175,15 +181,15 @@ I18N = {
         "count_msg": "当前已登记截图: {count} 张",
         "file_up_lbl": "选择报价单图片 (支持多选)",
         "orig_hdr": "📄 原始报价单凭证 (共 {count} 页)",
-        "res_hdr": "🔍 合理性审查及我司目标成本",
+        "res_hdr": "🔍 合理性审查及目标成本倒推",
         "api_warn": "👈 请在左侧侧边栏配置 Gemini API Key。",
         "exec_b": "🚀 自动核算目标成本核算单",
         "sub_p": "供应商提报单价",
         "adj_p": "我司目标核算单价",
         "diff_p": "预计降本金额",
         "diff_r": "降本比率",
-        "tbl_hdr": "📋 标准成本核算对比表 (汇总/明细结合)",
-        "cols": ["区分", "项目", "提报金额", "目标核算额", "差额(核减)", "核算基准及理由"],
+        "tbl_hdr": "📋 标准成本核算对比表 (目标价反向分摊)",
+        "cols": ["区分", "项目", "提报金额", "目标核算额", "差额(核减)", "核减理由及谈判主攻点"],
         "dl_csv": "📥 下载目标核算单 (CSV/Excel)",
         "hist_hdr": "📊 零件/车型累计核价与降本履历",
         "hist_search_v": "按车型/项目代码搜索",
@@ -191,7 +197,7 @@ I18N = {
         "hist_search_s": "按供应商(协力社)搜索",
         "hist_dl_csv": "📥 下载完整履历 (CSV)",
         "hist_empty": "暂无保存的核价履历。核价分析执行后将自动记录至此看板。",
-        "prompt_lang": "请使用简体中文输出详细的审查意见、剔除理由及向供应商发送的官方谈判公文。",
+        "prompt_lang": "请使用简体中文输出详细的审查意见、剔除理由、倒推分摊依据及向供应商发送的官方谈判公文。",
         "proc_options": {
             "프레스": "冲压 (Press)",
             "가공": "机加工 (CNC)",
@@ -287,6 +293,18 @@ with st.sidebar:
     in_veh = st.text_input(txt["v_type"], placeholder="예: TB6S / TB7")
     in_pno = st.text_input(txt["p_no"], placeholder="예: 68000511010")
     in_pnm = st.text_input(txt["p_name"], placeholder="예: STATOR / FLANGE")
+    
+    # 🎯 목표 타겟 단가 입력칸 신설
+    target_price_input = st.number_input(
+        txt["target_p_label"],
+        min_value=0.0,
+        value=0.0,
+        step=1.0 if selected_cur in ["KRW", "USD"] else 0.01,
+        format="%.3f" if selected_cur in ["USD", "CNY", "EUR"] else "%.1f",
+        help=txt["target_p_help"]
+    )
+    if target_price_input > 0:
+        st.success(f"🎯 Target Mode: {target_price_input:,.3f} {selected_cur}")
 
     st.divider()
     proc_labels = list(txt["proc_options"].values())
@@ -367,15 +385,36 @@ with tab_main1:
                 st.warning(txt["api_warn"])
             else:
                 if st.button(txt["exec_b"], type="primary"):
-                    with st.spinner("Analyzing quotes and calculating target cost..."):
+                    with st.spinner("Analyzing quotes and computing target cost engineering..."):
                         client = genai.Client(api_key=api_key)
                         parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in imgs]
 
+                        # 목표 단가 설정 여부에 따른 지침 분기
+                        target_instruction = ""
+                        if target_price_input > 0:
+                            target_instruction = f"""
+[🎯 최우선 특별 임무: 목표 타겟 단가({target_price_input} {selected_cur}) 맞춤형 역산 배분]
+- 사용자가 최종 도달해야 할 Target Price를 '{target_price_input} {selected_cur}'로 지정했습니다.
+- 따라서 최종 adjusted_price는 반드시 지정된 {target_price_input}에 수렴하도록 역산하십시오.
+- 협력사 제출가와 타겟단가 사이의 총 절감 필요액을 원가 요소별(재료비, 가공비, 일반관리비, 이윤, 물류비 등)로 합리적으로 배분하십시오.
+- [원가 요소별 역산 우선순위 및 구체적 지침]:
+  1) 1순위(부풀린 마진/관리비): 일반관리비율을 당사 상한({adm_r}%)으로 깎고, 이윤율도 상한({prf_r}%) 및 순가공비 기준으로만 제한.
+  2) 2순위(가공비/C/T 단축 요구): C/T를 몇 초 단축해야 하는지, 설비 효율을 몇 %로 끌어올려야 가공비 목표가 나오는지 역산 명시.
+  3) 3순위(재료비 로스율 최적화): 런너 중량 축소, 분쇄재 배합 비율 확대(가능한 경우), 투입 단중 다이어트 요구치 산출.
+  4) 4순위(포장/물류비): 적재율 개선을 통한 운반비 절감액 배분.
+- cost_breakdown의 note 열에는 단순 기준이 아니라, "타겟 달성을 위해 C/T 5초 단축 필요(-0.25)", "관리비율 10% 강제 축소(-0.12)" 등 협력사에 요구할 구체적인 기술적 액션 플랜을 기재하세요.
+"""
+                        else:
+                            target_instruction = """
+[표준 사정 모드]
+- 당사 표준 사정 기준에 따라 과다 계상된 원가 항목을 삭감하고 합리적인 사정가를 도출하세요.
+"""
+
                         prompt_intro = f"""
-당신은 자동차 부품 구매팀 원가 분석관입니다. 제공된 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
+당신은 자동차 부품 구매팀 원가 분석 및 목표원가설계(Target Costing) 수석관입니다. 제공된 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
 [입력정보] 차종: '{in_veh}', 품번: '{in_pno}', 품명: '{in_pnm}'
 [기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
-[사정기준]
+[기본 사정 기준]
 - 공정: {internal_proc_key}, 설비효율: {std_eff}% 이상 필수
 - 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
 - 여유율: {std_et}%, 재료관리비: 순재료비의 {mat_r}% 이하
@@ -383,6 +422,9 @@ with tab_main1:
 - 스크랩: 매각단가 {scrap_p}원/kg (복합수지 사출 분쇄불가는 투입량 전체 인정, 금속은 환입 필수)
 - 절대원칙: 총 사정단가가 협력사 제출단가보다 커지는 역전 현상 금지 (사정가 <= 제출가)
 - 통화 주의: 원본 견적서가 RMB/위안 또는 외화인 경우 제출 단가 통화 규격을 유지하여 비교하고, 필요시 환율을 명기하세요.
+
+{target_instruction}
+
 - 언어 지침: {txt['prompt_lang']}
 """
                         json_format_instruction = """
@@ -453,7 +495,7 @@ with tab_main1:
                                 "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": selected_proc_label,
                                 "통화": detected_cur,
                                 "제출가": round(sub_p, 3),
-                                "사정가": round(adj_p, 3),
+                                "사정(목표)가": round(adj_p, 3),
                                 "절감액": round(red_p, 3),
                                 "절감율": round(red_r, 1)
                             }])
