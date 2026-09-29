@@ -9,20 +9,43 @@ from streamlit_paste_button import paste_image_button
 # 1. 페이지 설정
 st.set_page_config(page_title="구매 견적 타당성 검토", page_icon="📊", layout="wide")
 
-# 2. 서울외환중개(SMBS) 환율 크롤링
+# 2. 서울외환중개(SMBS) 환율 크롤링 (정밀 테이블 파싱)
 @st.cache_data(ttl=3600)
 def get_smbs_rates():
-    d = {"KRW": 1.0, "USD": 1380.0, "CNY": 192.0, "EUR": 1500.0, "INR": 16.5}
+    rates = {"KRW": 1.0, "USD": 1360.0, "CNY": 195.0, "EUR": 1520.0, "INR": 16.5}
+    url = "http://www.smbs.biz/ExRate/TodayExRate.jsp"
     try:
-        req = urllib.request.Request("http://www.smbs.biz/ExRate/TodayExRate.jsp", headers={'User-Agent': 'Mozilla/5.0'})
-        html = urllib.request.urlopen(req, timeout=2.5).read().decode('euc-kr', 'ignore')
-        for c in ["USD", "CNY", "EUR", "INR"]:
-            m = re.search(c + r'.*?([0-9,]+\.[0-9]+|[0-9,]+)', html, re.DOTALL)
-            if m:
-                d[c] = float(m.group(1).replace(",", ""))
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        html = urllib.request.urlopen(req, timeout=3.0).read().decode('euc-kr', 'ignore')
+        
+        # pandas read_html을 통해 HTML 속성(height="22" 등)의 오인식 원천 차단
+        tables = pd.read_html(io.StringIO(html))
+        for t in tables:
+            # 텍스트화하여 통화명 검색
+            for _, row in t.iterrows():
+                row_str = " ".join([str(val) for val in row.values])
+                for cur in ["USD", "CNY", "EUR", "INR"]:
+                    if cur in row_str:
+                        # 3자리 이상 숫자(예: 1,360.00 또는 195.20) 정밀 매칭
+                        m = re.findall(r'[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?', row_str)
+                        for val in m:
+                            clean_val = float(val.replace(",", ""))
+                            # 통화별 정상 범위 필터링
+                            if cur == "USD" and 1000 <= clean_val <= 2000:
+                                rates["USD"] = clean_val
+                                break
+                            elif cur == "EUR" and 1000 <= clean_val <= 2200:
+                                rates["EUR"] = clean_val
+                                break
+                            elif cur == "CNY" and 100 <= clean_val <= 300:
+                                rates["CNY"] = clean_val
+                                break
+                            elif cur == "INR" and 10 <= clean_val <= 35:
+                                rates["INR"] = clean_val
+                                break
     except Exception:
         pass
-    return d
+    return rates
 
 # 3. 공정별 표준 데이터
 IND_MAP = {
@@ -48,23 +71,25 @@ with st.sidebar:
         api_key = st.text_input("Gemini API Key", type="password")
         
     st.divider()
-    # 통화 드롭다운 선택 기능
-    st.subheader("💱 기준 통화 및 환율 선택")
+    # 통화 및 환율 선택부 (직관적 표현 개선)
+    st.subheader("💱 기준 통화 및 환율")
     all_rates = get_smbs_rates()
-    selected_cur = st.selectbox("기준 통화 선택", ["KRW", "USD", "CNY", "EUR", "INR"], index=0)
+    selected_cur = st.selectbox("적용 통화 선택", ["KRW", "USD", "CNY", "EUR", "INR"], index=0)
     
     if selected_cur == "KRW":
         cur_rate = 1.0
-        st.info("원화(KRW) 기준 (환율: 1.0)")
+        st.info("원화(KRW) 기준 견적 (환율 1.0 적용)")
     else:
+        init_val = float(all_rates.get(selected_cur, 1360.0 if selected_cur == "USD" else 1.0))
         cur_rate = st.number_input(
-            f"{selected_cur} 적용 환율 (원화 대비)", 
-            value=float(all_rates.get(selected_cur, 1.0)), 
+            f"1 {selected_cur} 당 원화 환율 (원)", 
+            value=init_val, 
             step=1.0 if selected_cur in ["USD", "EUR"] else 0.1,
             format="%.2f",
-            help="서울외환중개(SMBS) 당일 기준환율 자동 매핑 (직접 수정 가능)"
+            help="서울외환중개(SMBS) 당일 매매기준율 자동 연동 (수동 변경 가능)"
         )
-        st.caption("🔗 [서울외환중개(SMBS) 시세 연동](http://www.smbs.biz/ExRate/TodayExRate.jsp)")
+        st.caption(f"ℹ️ 적용 기준: 1 {selected_cur} = {cur_rate:,.2f} KRW")
+        st.caption("🔗 [서울외환중개(SMBS) 일별 시세 연동](http://www.smbs.biz/ExRate/TodayExRate.jsp)")
 
     st.divider()
     st.subheader("🚘 부품/프로젝트 정보")
@@ -136,14 +161,14 @@ with tab_main1:
                 st.warning("👈 왼쪽 사이드바에 API Key를 설정해주세요.")
             else:
                 if st.button("🚀 사정 원가계산서 산출", type="primary"):
-                    with st.spinner("AI 분석 중..."):
+                    with st.spinner("AI 분석 및 사정 원가 산출 중..."):
                         client = genai.Client(api_key=api_key)
                         parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in imgs]
                         
                         p_txt = f"""
                         자동차 부품 구매팀 원가 분석관으로서 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
                         [입력정보] 차종:'{in_veh}', 품번:'{in_pno}', 품명:'{in_pnm}'
-                        [기준통화] {selected_cur} (적용환율: {cur_rate} KRW/{selected_cur})
+                        [기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
                         [사정기준]
                         - 공정: {ind}, 설비효율: {std_eff}% 이상 필수
                         - 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
@@ -183,7 +208,7 @@ with tab_main1:
                             fs = data.get("item_info", {}).get("supplier", "Unknown")
                             comp = data["comparison"]
 
-                            # 이력 CSV 기록
+                            # 이력 CSV 누적 기록
                             h_file = "audit_history.csv"
                             row = pd.DataFrame([{
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -222,15 +247,13 @@ with tab_main1:
                         except Exception as e:
                             st.error(f"오류 발생: {e}")
 
-# TAB 2: 이력 관리 (안전한 컬럼 조회 적용)
+# TAB 2: 이력 관리
 with tab_main2:
     st.subheader("📊 부품/차종별 누적 원가 사정 이력")
     h_file = "audit_history.csv"
     if os.path.exists(h_file):
         try:
             hdf = pd.read_csv(h_file, encoding="utf-8-sig")
-            
-            # 구버전 컬럼명 호환 처리
             col_sub = "제출가" if "제출가" in hdf.columns else "제출가(원)"
             col_adj = "사정가" if "사정가" in hdf.columns else "사정가(원)"
             col_sav = "절감액" if "절감액" in hdf.columns else "절감액(원)"
