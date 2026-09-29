@@ -187,15 +187,15 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
-                        # 503 / 429 트래픽 과부하 대비 4회 지수 백오프 및 폴백 처리
-                        candidate_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+                        # 2026년 정식 지원 모델 (gemini-3.6-flash 우선, 과부하시 gemini-3.1-pro-preview 폴백)
+                        candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
                         data = None
                         last_error = None
                         
                         for model_name in candidate_models:
                             if data is not None:
                                 break
-                            for attempt in range(4):
+                            for attempt in range(3):
                                 try:
                                     res = client.models.generate_content(
                                         model=model_name,
@@ -225,7 +225,7 @@ with tab_main1:
                                         break
                         
                         if data is None:
-                            st.error(f"구글 AI 서버 접속 지연 오류: {last_error}")
+                            st.error(f"AI 분석 처리 오류: {last_error}")
                         else:
                             item_info = data.get("item_info", {}) if isinstance(data.get("item_info"), dict) else {}
                             fv = in_veh or item_info.get("vehicle_type", "Unknown")
