@@ -159,30 +159,32 @@ with tab_main1:
                         client = genai.Client(api_key=api_key)
                         parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in imgs]
                         
-                        p_txt = f"""
-                        자동차 부품 구매팀 원가 분석관으로서 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
-                        [입력정보] 차종:'{in_veh}', 품번:'{in_pno}', 품명:'{in_pnm}'
-                        [기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
-                        [사정기준]
-                        - 공정: {ind}, 설비효율: {std_eff}% 이상 필수
-                        - 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
-                        - 여유율: {std_et}%, 재료관리비: 순재료비의 {mat_r}% 이하
-                        - 간접경비: 상한 {oh_r}%, 일반관리비: Min({adm_r}%, 협력사치), 영업이익: Min({prf_r}%, 협력사치)
-                        - 스크랩: 매각단가 {scrap_p}원/kg (복합수지 사출 분쇄불가는 투입량 전체 인정, 금속은 환입 필수)
-                        - 절대원칙: 총 사정단가가 협력사 제출단가보다 커지는 역전 현상 금지 (사정가 <= 제출가)
-                        - 통화 주의: 원본 견적서가 RMB/위안 또는 외화인 경우 제출 단가 통화 규격을 유지하여 비교하고, 필요시 환율을 명기하세요.
-                        - 언어: {lang}로 audit_comment 작성
-
-                        반드시 최상위가 단일 JSON Object({}) 형태여야 합니다 (Array 금지):
-                        {{
-                            "item_info": {{"vehicle_type": "", "supplier": "", "part_name": "", "part_no": "", "currency": "{selected_cur}"}},
-                            "comparison": {{"submitted_price": 0.0, "adjusted_price": 0.0, "cost_reduction": 0.0, "reduction_rate": 0.0}},
-                            "cost_breakdown": [
-                                {{"category": "", "item": "", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}}
-                            ],
-                            "audit_comment": ""
-                        }}
-                        """
+                        prompt_intro = f"""
+자동차 부품 구매팀 원가 분석관으로서 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
+[입력정보] 차종: '{in_veh}', 품번: '{in_pno}', 품명: '{in_pnm}'
+[기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
+[사정기준]
+- 공정: {ind}, 설비효율: {std_eff}% 이상 필수
+- 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
+- 여유율: {std_et}%, 재료관리비: 순재료비의 {mat_r}% 이하
+- 간접경비: 상한 {oh_r}%, 일반관리비: Min({adm_r}%, 협력사치), 영업이익: Min({prf_r}%, 협력사치)
+- 스크랩: 매각단가 {scrap_p}원/kg (복합수지 사출 분쇄불가는 투입량 전체 인정, 금속은 환입 필수)
+- 절대원칙: 총 사정단가가 협력사 제출단가보다 커지는 역전 현상 금지 (사정가 <= 제출가)
+- 통화 주의: 원본 견적서가 RMB/위안 또는 외화인 경우 제출 단가 통화 규격을 유지하여 비교하고, 필요시 환율을 명기하세요.
+- 언어: {lang}로 audit_comment 작성
+"""
+                        json_format_instruction = """
+반드시 최상위가 단일 JSON Object 형태여야 합니다 (Array 금지):
+{
+  "item_info": {"vehicle_type": "", "supplier": "", "part_name": "", "part_no": "", "currency": ""},
+  "comparison": {"submitted_price": 0.0, "adjusted_price": 0.0, "cost_reduction": 0.0, "reduction_rate": 0.0},
+  "cost_breakdown": [
+    {"category": "", "item": "", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}
+  ],
+  "audit_comment": ""
+}
+"""
+                        p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
                         try:
@@ -197,7 +199,6 @@ with tab_main1:
                             c_raw = re.sub(r"\s*```$", "", c_raw)
                             raw_parsed = json.loads(c_raw, strict=False)
 
-                            # 리스트 형태로 반환되었을 경우 딕셔너리로 자동 정규화
                             if isinstance(raw_parsed, list):
                                 data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
                             elif isinstance(raw_parsed, dict):
@@ -205,7 +206,6 @@ with tab_main1:
                             else:
                                 data = {}
 
-                            # 품목 정보 안전 추출
                             item_info = data.get("item_info", {}) if isinstance(data.get("item_info"), dict) else {}
                             fv = in_veh or item_info.get("vehicle_type", "Unknown")
                             fp = in_pno or item_info.get("part_no", "Unknown")
@@ -213,14 +213,12 @@ with tab_main1:
                             fs = item_info.get("supplier", "Unknown")
                             detected_cur = item_info.get("currency", selected_cur)
 
-                            # 가격 비교 데이터 안전 추출
                             comp = data.get("comparison", {}) if isinstance(data.get("comparison"), dict) else {}
                             sub_p = float(comp.get("submitted_price", 0.0))
                             adj_p = float(comp.get("adjusted_price", 0.0))
                             red_p = float(comp.get("cost_reduction", 0.0))
                             red_r = float(comp.get("reduction_rate", 0.0))
 
-                            # 이력 CSV 누적 기록
                             h_file = "audit_history.csv"
                             row = pd.DataFrame([{
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
