@@ -58,12 +58,9 @@ I18N = {
         "cols": ["구분", "항목", "제출가", "사정가", "차액", "사정 기준 및 사유"],
         "dl_csv": "📥 사정 원가계산서 CSV 다운로드",
         "hist_hdr": "📊 부품/차종별 누적 원가 사정 이력",
-        "hist_total_cnt": "총 검토 건수",
-        "hist_total_sub": "총 제출가 합계",
-        "hist_total_adj": "총 사정가 합계",
-        "hist_total_sav": "총 절감 기여액",
         "hist_search_v": "차종 검색",
         "hist_search_p": "품번/품명 검색",
+        "hist_search_s": "협력사(업체명) 검색",
         "hist_dl_csv": "📥 전체 이력 CSV 다운로드",
         "hist_empty": "저장된 사정 이력이 없습니다. 견적서 분석을 실행하면 자동으로 누적 기록됩니다.",
         "prompt_lang": "한국어로 상세하고 전문적인 원가 검토 의견 및 협력사 공식 네고 문구를 작성하세요.",
@@ -125,12 +122,9 @@ I18N = {
         "cols": ["Category", "Cost Item", "Submitted", "Target Cost", "Variance", "Audit Remarks"],
         "dl_csv": "📥 Download Target Cost Sheet (CSV)",
         "hist_hdr": "📊 Cumulative Cost Audit & Savings History",
-        "hist_total_cnt": "Total Audits",
-        "hist_total_sub": "Total Submitted Amount",
-        "hist_total_adj": "Total Target Amount",
-        "hist_total_sav": "Total Savings Amount",
         "hist_search_v": "Filter by Project",
-        "hist_search_p": "Filter by Part No / Part Name",
+        "hist_search_p": "Filter by Part No / Name",
+        "hist_search_s": "Filter by Supplier",
         "hist_dl_csv": "📥 Download All History (CSV)",
         "hist_empty": "No audit history found. Audited quotes will be automatically recorded here.",
         "prompt_lang": "Provide the complete breakdown rationale and negotiation memo in ENGLISH.",
@@ -192,12 +186,9 @@ I18N = {
         "cols": ["区分", "项目", "提报金额", "目标核算额", "差额(核减)", "核算基准及理由"],
         "dl_csv": "📥 下载目标核算单 (CSV/Excel)",
         "hist_hdr": "📊 零件/车型累计核价与降本履历",
-        "hist_total_cnt": "总审核笔数",
-        "hist_total_sub": "提报总金额",
-        "hist_total_adj": "目标总金额",
-        "hist_total_sav": "累计降本总额",
         "hist_search_v": "按车型/项目代码搜索",
         "hist_search_p": "按零件号/零件名搜索",
+        "hist_search_s": "按供应商(协力社)搜索",
         "hist_dl_csv": "📥 下载完整履历 (CSV)",
         "hist_empty": "暂无保存的核价履历。核价分析执行后将自动记录至此看板。",
         "prompt_lang": "请使用简体中文输出详细的审查意见、剔除理由及向供应商发送的官方谈判公文。",
@@ -298,10 +289,8 @@ with st.sidebar:
     in_pnm = st.text_input(txt["p_name"], placeholder="예: STATOR / FLANGE")
 
     st.divider()
-    # 공정명 다국어 드롭다운 매핑
     proc_labels = list(txt["proc_options"].values())
     selected_proc_label = st.selectbox(txt["proc_sel"], proc_labels, index=0)
-    # 선택된 라벨로부터 내부 키값(한국어 기준 키) 역추출
     internal_proc_key = [k for k, v in txt["proc_options"].items() if v == selected_proc_label][0]
     cfg = IND_MAP[internal_proc_key]
 
@@ -337,7 +326,6 @@ with tab_main1:
     with t1:
         cb1, cb2 = st.columns([2, 1])
         with cb1:
-            # key에 언어명(selected_lang)을 부여하여 언어 변경 시 캡처 버튼 텍스트가 즉시 갱신되도록 처리
             p_res = paste_image_button(
                 txt["paste_b"],
                 background_color="#1F4E79",
@@ -506,22 +494,15 @@ with tab_main2:
     if os.path.exists(h_file):
         try:
             hdf = pd.read_csv(h_file, encoding="utf-8-sig")
-            col_sub = "제출가" if "제출가" in hdf.columns else "제출가(원)"
-            col_adj = "사정가" if "사정가" in hdf.columns else "사정가(원)"
-            col_sav = "절감액" if "절감액" in hdf.columns else "절감액(원)"
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric(txt["hist_total_cnt"], f"{len(hdf)} 건 / Cases")
-            c2.metric(txt["hist_total_sub"], f"{pd.to_numeric(hdf[col_sub], errors='coerce').fillna(0).sum():,.0f}")
-            c3.metric(txt["hist_total_adj"], f"{pd.to_numeric(hdf[col_adj], errors='coerce').fillna(0).sum():,.0f}")
-            c4.metric(txt["hist_total_sav"], f"-{pd.to_numeric(hdf[col_sav], errors='coerce').fillna(0).sum():,.0f}")
-
-            st.divider()
-            fc1, fc2 = st.columns(2)
+            # 검색 필터 3분할 (차종, 품번/품명, 협력사)
+            fc1, fc2, fc3 = st.columns(3)
             with fc1:
                 q_v = st.text_input(txt["hist_search_v"], "")
             with fc2:
                 q_p = st.text_input(txt["hist_search_p"], "")
+            with fc3:
+                q_s = st.text_input(txt["hist_search_s"], "")
 
             res_df = hdf
             if q_v and "차종" in res_df.columns:
@@ -533,6 +514,8 @@ with tab_main2:
                 if "품명" in res_df.columns:
                     cond |= res_df["품명"].astype(str).str.contains(q_p, na=False, case=False)
                 res_df = res_df[cond]
+            if q_s and "협력사" in res_df.columns:
+                res_df = res_df[res_df["협력사"].astype(str).str.contains(q_s, na=False, case=False)]
 
             st.dataframe(res_df, use_container_width=True, hide_index=True)
             st.download_button(
