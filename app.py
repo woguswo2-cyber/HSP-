@@ -124,7 +124,6 @@ with tab_main1:
     with t1:
         cb1, cb2 = st.columns([2, 1])
         with cb1:
-            # key를 동적으로 부여하여 초기화 시 컴포넌트 자체를 강제 리셋
             p_res = paste_image_button(
                 "📋 캡처 추가하기", 
                 background_color="#1F4E79", 
@@ -198,41 +197,40 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
-                        candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
+                        # 무료 티어에서도 쿼터 제한 없이 안정적인 Flash 모델 단독 사용
+                        target_model = "gemini-2.5-flash"
                         data = None
                         last_error = None
                         
-                        for model_name in candidate_models:
-                            if data is not None:
-                                break
-                            for attempt in range(3):
-                                try:
-                                    res = client.models.generate_content(
-                                        model=model_name,
-                                        contents=parts,
-                                        config=types.GenerateContentConfig(response_mime_type="application/json")
-                                    )
-                                    c_raw = res.text.strip()
-                                    c_raw = re.sub(r"^```json\s*", "", c_raw)
-                                    c_raw = re.sub(r"^```\s*", "", c_raw)
-                                    c_raw = re.sub(r"\s*```$", "", c_raw)
-                                    raw_parsed = json.loads(c_raw, strict=False)
+                        for attempt in range(4):
+                            try:
+                                res = client.models.generate_content(
+                                    model=target_model,
+                                    contents=parts,
+                                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                                )
+                                c_raw = res.text.strip()
+                                c_raw = re.sub(r"^```json\s*", "", c_raw)
+                                c_raw = re.sub(r"^```\s*", "", c_raw)
+                                c_raw = re.sub(r"\s*```$", "", c_raw)
+                                raw_parsed = json.loads(c_raw, strict=False)
 
-                                    if isinstance(raw_parsed, list):
-                                        data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
-                                    elif isinstance(raw_parsed, dict):
-                                        data = raw_parsed
-                                    else:
-                                        data = {}
+                                if isinstance(raw_parsed, list):
+                                    data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
+                                elif isinstance(raw_parsed, dict):
+                                    data = raw_parsed
+                                else:
+                                    data = {}
+                                break
+                            except Exception as e:
+                                last_error = e
+                                err_str = str(e)
+                                if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
+                                    # 429 발생 시 대기 시간 후 재시도
+                                    time.sleep(3 * (attempt + 1))
+                                    continue
+                                else:
                                     break
-                                except Exception as e:
-                                    last_error = e
-                                    err_str = str(e)
-                                    if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
-                                        time.sleep(2 * (attempt + 1))
-                                        continue
-                                    else:
-                                        break
                         
                         if data is None:
                             st.error(f"AI 분석 처리 오류: {last_error}")
