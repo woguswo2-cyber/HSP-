@@ -6,6 +6,7 @@ import pandas as pd
 import json
 import re
 from datetime import datetime
+import urllib.request
 from google import genai
 from google.genai import types
 from streamlit_paste_button import paste_image_button
@@ -20,15 +21,54 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# 2. 다국어 텍스트 사전 (KO / EN / ZH)
+# 2. 서울외환중개(SMBS) 환율 크롤링 / 조회 함수
+# ---------------------------------------------------------
+@st.cache_data(ttl=3600)
+def fetch_smbs_exchange_rates():
+    """서울외환중개 매매기준율 크롤링 (실패 시 기본 백업 환율 반환)"""
+    default_rates = {"USD": 1380.0, "CNY": 192.0, "EUR": 1500.0, "INR": 16.5}
+    url = "http://www.smbs.biz/ExRate/TodayExRate.jsp"
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        html = urllib.request.urlopen(req, timeout=4).read().decode('euc-kr', 'ignore')
+        
+        rates = {}
+        # 정규표현식으로 통화별 기준환율 파싱
+        usd_match = re.search(r'USD.*?([0-9,]+\.[0-9]+|[0-9,]+)', html, re.DOTALL)
+        cny_match = re.search(r'CNY.*?([0-9,]+\.[0-9]+|[0-9,]+)', html, re.DOTALL)
+        eur_match = re.search(r'EUR.*?([0-9,]+\.[0-9]+|[0-9,]+)', html, re.DOTALL)
+        inr_match = re.search(r'INR.*?([0-9,]+\.[0-9]+|[0-9,]+)', html, re.DOTALL)
+
+        if usd_match:
+            rates["USD"] = float(usd_match.group(1).replace(",", ""))
+        if cny_match:
+            rates["CNY"] = float(cny_match.group(1).replace(",", ""))
+        if eur_match:
+            rates["EUR"] = float(eur_match.group(1).replace(",", ""))
+        if inr_match:
+            rates["INR"] = float(inr_match.group(1).replace(",", ""))
+
+        for k in default_rates:
+            if k not in rates or rates[k] == 0:
+                rates[k] = default_rates[k]
+        return rates
+    except Exception:
+        return default_rates
+
+# ---------------------------------------------------------
+# 3. 다국어 텍스트 사전 (KO / EN / ZH)
 # ---------------------------------------------------------
 I18N = {
     "한국어": {
         "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적 산출",
-        "caption": "공정별 설비효율, 기계경비 배부율, 다중 견적서(갑/을지) 교차검증 및 차종/품번 이력 관리를 지원합니다.",
+        "caption": "공정별 설비효율, 기계경비 배부율, SMBS 기준환율, 다중 견적서(갑/을지) 교차검증 및 차종/품번 이력 관리를 지원합니다.",
         "settings": "⚙️ 분석 및 사정 기준 설정",
         "api_auto": "🔑 API Key 자동 연동 완료",
         "api_input": "Gemini API Key 입력",
+        "ex_rate_header": "💱 통화별 기준 환율 (서울외환중개)",
         "project_info": "🚘 부품 / 프로젝트 관리 정보",
         "vehicle_type": "개발 차종 (Project)",
         "part_no": "품번 (Part No.)",
@@ -77,10 +117,11 @@ I18N = {
     },
     "English": {
         "title": "📊 Supplier Cost Sheet Audit & Target Price Estimation System",
-        "caption": "Supports industry equipment efficiency, overhead allocation, multi-page sheet audit, and part history tracking.",
+        "caption": "Supports equipment efficiency, overhead allocation, SMBS foreign exchange rates, multi-sheet audit, and part history tracking.",
         "settings": "⚙️ Audit & Target Cost Configuration",
         "api_auto": "🔑 API Key Automatically Connected",
         "api_input": "Enter Gemini API Key",
+        "ex_rate_header": "💱 Foreign Exchange Rates (SMBS Standard)",
         "project_info": "🚘 Project & Part Management Info",
         "vehicle_type": "Vehicle Model / Project",
         "part_no": "Part Number (P/N)",
@@ -129,10 +170,11 @@ I18N = {
     },
     "中文": {
         "title": "📊 供应商报价/成本核算单自动审查与目标成本核算系统",
-        "caption": "支持工艺设备稼动率、机械间接费分摊、多页报价单交叉验证及车型/零件履历管理。",
+        "caption": "支持工艺稼动率、机械间接费分摊、首尔外汇中介基准汇率、多页报价交叉验证及车型/零件履历管理。",
         "settings": "⚙️ 审查及目标成本核算基准设置",
         "api_auto": "🔑 API Key 自动绑定成功",
         "api_input": "输入 Gemini API Key",
+        "ex_rate_header": "💱 币种基准汇率 (首尔外汇中介/SMBS)",
         "project_info": "🚘 零件及项目履历管理信息",
         "vehicle_type": "开发车型 / 项目代码 (Project)",
         "part_no": "零件号 (Part No.)",
@@ -182,7 +224,7 @@ I18N = {
 }
 
 # ---------------------------------------------------------
-# 3. 공정별 표준 데이터 맵
+# 4. 공정별 표준 데이터 맵
 # ---------------------------------------------------------
 INDUSTRY_CONFIG = {
     "프레스": {
@@ -244,10 +286,9 @@ INDUSTRY_CONFIG = {
 }
 
 # ---------------------------------------------------------
-# 4. 사이드바 설정 (언어 선택 & 프로젝트 이력 정보 & 원가 기준)
+# 5. 사이드바 설정 영역
 # ---------------------------------------------------------
 with st.sidebar:
-    # [A] 언어 선택창
     selected_lang = st.selectbox("🌐 Language / 언어 / 语言", ["한국어", "English", "中文"], index=0)
     txt = I18N[selected_lang]
 
@@ -261,7 +302,23 @@ with st.sidebar:
 
     st.divider()
 
-    # [B] 개발 차종 및 품번 이력 관리 입력란
+    # [1] 환율 기준 설정 영역 (서울외환중개 연동)
+    st.subheader(txt["ex_rate_header"])
+    smbs_rates = fetch_smbs_exchange_rates()
+
+    r_col1, r_col2 = st.columns(2)
+    with r_col1:
+        rate_usd = st.number_input("USD (달러)", value=float(smbs_rates["USD"]), step=1.0, format="%.2f")
+        rate_cny = st.number_input("CNY (위안)", value=float(smbs_rates["CNY"]), step=0.5, format="%.2f")
+    with r_col2:
+        rate_eur = st.number_input("EUR (유로)", value=float(smbs_rates["EUR"]), step=1.0, format="%.2f")
+        rate_inr = st.number_input("INR (루피)", value=float(smbs_rates["INR"]), step=0.1, format="%.2f")
+    
+    st.caption("🔗 [서울외환중개(SMBS) 일별 시세 연동](http://www.smbs.biz/ExRate/TodayExRate.jsp)")
+
+    st.divider()
+
+    # [2] 부품 및 프로젝트 관리 정보
     st.subheader(txt["project_info"])
     input_vehicle = st.text_input(txt["vehicle_type"], placeholder="예: TB6S / e-Booster / Blower")
     input_part_no = st.text_input(txt["part_no"], placeholder="예: 68000511010 / 16400-XXXXX")
@@ -269,7 +326,7 @@ with st.sidebar:
 
     st.divider()
 
-    # [C] 공정 선택
+    # [3] 공정 선택
     industry_list = list(INDUSTRY_CONFIG.keys())
     selected_industry = st.selectbox(txt["proc_select"], industry_list, index=0)
     cfg = INDUSTRY_CONFIG[selected_industry]
@@ -301,7 +358,7 @@ with st.sidebar:
 
     st.divider()
 
-    # [D] 원가 가산율 통제 기준
+    # [4] 원가 가산율 통제 기준
     st.subheader(txt["cost_limits"])
     std_mat_manage_rate = st.slider(txt["mat_manage"], 0.0, 10.0, 2.0, 0.5)
     std_overhead_rate = st.slider(txt["overhead"], 20, 350, cfg["overhead_rate"], 10)
@@ -311,7 +368,7 @@ with st.sidebar:
 
     st.divider()
 
-    # [E] 스크랩 검증 방식
+    # [5] 스크랩 검증 방식
     scrap_mode = st.radio(txt["scrap_mode"], [txt["scrap_price_mode"], txt["scrap_ratio_mode"]], index=0)
     if scrap_mode == txt["scrap_price_mode"]:
         target_scrap_price = st.number_input(txt["scrap_price_input"], min_value=0, value=12500, step=500)
@@ -321,7 +378,7 @@ with st.sidebar:
         scrap_criteria_text = f"신재 단가 대비 인정 기준율: {target_scrap_ratio}% 이상 반영 (재활용/매각 가능 소재에 한함)"
 
 # ---------------------------------------------------------
-# 5. 메인 레이아웃 (탭: 분석 vs 이력 관리)
+# 6. 메인 화면 레이아웃
 # ---------------------------------------------------------
 st.title(txt["title"])
 st.caption(txt["caption"])
@@ -377,7 +434,6 @@ with main_tab1:
         if uploaded_files:
             image_list = [{"bytes": f.getvalue(), "mime": f.type} for f in uploaded_files]
 
-    # 분석 실행부
     if image_list:
         col1, col2 = st.columns([1, 1], gap="medium")
 
@@ -392,7 +448,7 @@ with main_tab1:
                 st.warning(txt["api_warning"])
             else:
                 if st.button(txt["exec_btn"], type="primary"):
-                    spin_msg = "Analyzing quotations, cross-referencing sheets & auditing target cost..."
+                    spin_msg = "Analyzing quotations, currency rates & auditing target cost..."
                     with st.spinner(spin_msg):
                         client = genai.Client(api_key=api_key)
 
@@ -408,6 +464,13 @@ with main_tab1:
                         - 입력된 차종: '{input_vehicle}' (비어있다면 견적서에서 자동 추출)
                         - 입력된 품번: '{input_part_no}' (비어있다면 견적서에서 자동 추출)
                         - 입력된 품명: '{input_part_name}' (비어있다면 견적서에서 자동 추출)
+
+                        [서울외환중개 기준 적용 환율 (외화 단가 발생 시 적용)]
+                        - USD: {rate_usd} KRW
+                        - CNY: {rate_cny} KRW
+                        - EUR: {rate_eur} KRW
+                        - INR: {rate_inr} KRW
+                        (견적서에 수입 원자재나 외화 단가가 기재되어 있을 경우 위 기준환율을 초과하여 환율 차손을 과다 반영했는지 반드시 검증할 것)
 
                         [갑지/을지 교차 분석 핵심 지침]
                         1. 을지(세부내역)의 투입단중, C/T, 임율, 기계경비, 스크랩 환입을 정밀 검증하여 적정 제조원가를 도출하세요.
@@ -439,7 +502,7 @@ with main_tab1:
                         - comparison: submitted_price, adjusted_price, cost_reduction, reduction_rate
                         - cost_breakdown: 배열 형태, 각 요소는 category, item, submitted, adjusted, diff, note
                           (항목: 투입재료비, 스크랩환입(-), 순재료비, 재료관리비, 직접노무비, 간접제조경비, 제조원가 합계, 일반관리비, 영업이익, 최종 견적 단가)
-                        - audit_comment: 상세 검토 의견, 삭감 사유, 협력사 전달용 공식 공문 문구
+                        - audit_comment: 환율 적용 타당성, 갑지/을지 대조 결과, 세부 삭감 사유, 협력사 전달용 공식 공문 문구
                         """
                         contents.append(prompt)
 
@@ -462,7 +525,6 @@ with main_tab1:
                                     clean_text = re.sub(r"\s*```$", "", clean_text)
                                     data = json.loads(clean_text, strict=False)
 
-                                # 이력 저장을 위한 품목 정보 보정
                                 final_vehicle = input_vehicle or data.get("item_info", {}).get("vehicle_type", "Unknown")
                                 final_part_no = input_part_no or data.get("item_info", {}).get("part_no", "Unknown")
                                 final_part_name = input_part_name or data.get("item_info", {}).get("part_name", "Unknown")
@@ -470,7 +532,7 @@ with main_tab1:
 
                                 comp = data["comparison"]
 
-                                # CSV 파일에 이력 자동 누적 저장
+                                # 이력 누적 저장
                                 history_file = "audit_history.csv"
                                 new_history = {
                                     "일자": [datetime.now().strftime("%Y-%m-%d %H:%M")],
@@ -513,7 +575,7 @@ with main_tab1:
                                 )
                                 st.divider()
 
-                                # 상세 검토 의견 및 공문 텍스트
+                                # 코멘트 출력
                                 if "audit_comment" in data and data["audit_comment"]:
                                     st.markdown(data["audit_comment"])
 
@@ -530,47 +592,4 @@ with main_tab1:
 # TAB 2: 차종/품번별 사정 이력 관리 대시보드
 # ---------------------------------------------------------
 with main_tab2:
-    st.subheader("📊 부품/차종별 누적 원가 사정 및 절감 이력")
-    history_file = "audit_history.csv"
-
-    if os.path.exists(history_file):
-        hist_df = pd.read_csv(history_file, encoding="utf-8-sig")
-        
-        # 상단 누적 통계 카드
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("총 검토 건수", f"{len(hist_df)} 건")
-        m2.metric("총 제출 금액 합계", f"{hist_df['제출가(원)'].sum():,.0f} 원")
-        m3.metric("총 사정 목표액 합계", f"{hist_df['사정가(원)'].sum():,.0f} 원")
-        total_saving = hist_df['절감액(원)'].sum()
-        m4.metric("총 절감 기여액", f"-{total_saving:,.0f} 원")
-
-        st.divider()
-
-        # 검색 필터
-        f_col1, f_col2 = st.columns(2)
-        with f_col1:
-            search_vehicle = st.text_input("차종으로 검색", "")
-        with f_col2:
-            search_part = st.text_input("품번/품명으로 검색", "")
-
-        filtered_df = hist_df
-        if search_vehicle:
-            filtered_df = filtered_df[filtered_df["차종"].str.contains(search_vehicle, na=False, case=False)]
-        if search_part:
-            filtered_df = filtered_df[
-                filtered_df["품번"].str.contains(search_part, na=False, case=False) |
-                filtered_df["품명"].str.contains(search_part, na=False, case=False)
-            ]
-
-        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-        # 전체 이력 다운로드 버튼
-        full_csv = hist_df.to_csv(index=False, encoding="utf-8-sig")
-        st.download_button(
-            label="📥 누적 이력 전체 엑셀(CSV) 다운로드",
-            data=full_csv,
-            file_name="All_Cost_Audit_History.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("아직 저장된 사정 이력이 없습니다. 견적서를 분석하면 이곳에 차종/품번별 절감 실적이 자동으로 누적 기록됩니다.")
+    st.subheader("📊 부품/차
