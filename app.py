@@ -9,7 +9,7 @@ from streamlit_paste_button import paste_image_button
 # 1. 페이지 설정
 st.set_page_config(page_title="구매 견적 타당성 검토", page_icon="📊", layout="wide")
 
-# 2. 서울외환중개(SMBS) 환율 크롤링 (정밀 테이블 파싱)
+# 2. 서울외환중개(SMBS) 환율 크롤링
 @st.cache_data(ttl=3600)
 def get_smbs_rates():
     rates = {"KRW": 1.0, "USD": 1360.0, "CNY": 195.0, "EUR": 1520.0, "INR": 16.5}
@@ -17,20 +17,15 @@ def get_smbs_rates():
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         html = urllib.request.urlopen(req, timeout=3.0).read().decode('euc-kr', 'ignore')
-        
-        # pandas read_html을 통해 HTML 속성(height="22" 등)의 오인식 원천 차단
         tables = pd.read_html(io.StringIO(html))
         for t in tables:
-            # 텍스트화하여 통화명 검색
             for _, row in t.iterrows():
                 row_str = " ".join([str(val) for val in row.values])
                 for cur in ["USD", "CNY", "EUR", "INR"]:
                     if cur in row_str:
-                        # 3자리 이상 숫자(예: 1,360.00 또는 195.20) 정밀 매칭
                         m = re.findall(r'[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?', row_str)
                         for val in m:
                             clean_val = float(val.replace(",", ""))
-                            # 통화별 정상 범위 필터링
                             if cur == "USD" and 1000 <= clean_val <= 2000:
                                 rates["USD"] = clean_val
                                 break
@@ -71,7 +66,6 @@ with st.sidebar:
         api_key = st.text_input("Gemini API Key", type="password")
         
     st.divider()
-    # 통화 및 환율 선택부 (직관적 표현 개선)
     st.subheader("💱 기준 통화 및 환율")
     all_rates = get_smbs_rates()
     selected_cur = st.selectbox("적용 통화 선택", ["KRW", "USD", "CNY", "EUR", "INR"], index=0)
@@ -176,11 +170,12 @@ with tab_main1:
                         - 간접경비: 상한 {oh_r}%, 일반관리비: Min({adm_r}%, 협력사치), 영업이익: Min({prf_r}%, 협력사치)
                         - 스크랩: 매각단가 {scrap_p}원/kg (복합수지 사출 분쇄불가는 투입량 전체 인정, 금속은 환입 필수)
                         - 절대원칙: 총 사정단가가 협력사 제출단가보다 커지는 역전 현상 금지 (사정가 <= 제출가)
+                        - 통화 주의: 원본 견적서가 RMB/위안 또는 외화인 경우 제출 단가 통화 규격을 유지하여 비교하고, 필요시 환율을 명기하세요.
                         - 언어: {lang}로 audit_comment 작성
 
-                        반드시 아래 JSON 포맷으로만 응답:
+                        반드시 최상위가 단일 JSON Object({}) 형태여야 합니다 (Array 금지):
                         {{
-                            "item_info": {{"vehicle_type": "", "supplier": "", "part_name": "", "part_no": ""}},
+                            "item_info": {{"vehicle_type": "", "supplier": "", "part_name": "", "part_no": "", "currency": "{selected_cur}"}},
                             "comparison": {{"submitted_price": 0.0, "adjusted_price": 0.0, "cost_reduction": 0.0, "reduction_rate": 0.0}},
                             "cost_breakdown": [
                                 {{"category": "", "item": "", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}}
@@ -200,24 +195,41 @@ with tab_main1:
                             c_raw = re.sub(r"^```json\s*", "", c_raw)
                             c_raw = re.sub(r"^```\s*", "", c_raw)
                             c_raw = re.sub(r"\s*```$", "", c_raw)
-                            data = json.loads(c_raw, strict=False)
+                            raw_parsed = json.loads(c_raw, strict=False)
 
-                            fv = in_veh or data.get("item_info", {}).get("vehicle_type", "Unknown")
-                            fp = in_pno or data.get("item_info", {}).get("part_no", "Unknown")
-                            fn = in_pnm or data.get("item_info", {}).get("part_name", "Unknown")
-                            fs = data.get("item_info", {}).get("supplier", "Unknown")
-                            comp = data["comparison"]
+                            # 리스트 형태로 반환되었을 경우 딕셔너리로 자동 정규화
+                            if isinstance(raw_parsed, list):
+                                data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
+                            elif isinstance(raw_parsed, dict):
+                                data = raw_parsed
+                            else:
+                                data = {}
+
+                            # 품목 정보 안전 추출
+                            item_info = data.get("item_info", {}) if isinstance(data.get("item_info"), dict) else {}
+                            fv = in_veh or item_info.get("vehicle_type", "Unknown")
+                            fp = in_pno or item_info.get("part_no", "Unknown")
+                            fn = in_pnm or item_info.get("part_name", "Unknown")
+                            fs = item_info.get("supplier", "Unknown")
+                            detected_cur = item_info.get("currency", selected_cur)
+
+                            # 가격 비교 데이터 안전 추출
+                            comp = data.get("comparison", {}) if isinstance(data.get("comparison"), dict) else {}
+                            sub_p = float(comp.get("submitted_price", 0.0))
+                            adj_p = float(comp.get("adjusted_price", 0.0))
+                            red_p = float(comp.get("cost_reduction", 0.0))
+                            red_r = float(comp.get("reduction_rate", 0.0))
 
                             # 이력 CSV 누적 기록
                             h_file = "audit_history.csv"
                             row = pd.DataFrame([{
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": ind,
-                                "통화": selected_cur,
-                                "제출가": round(comp['submitted_price'], 1),
-                                "사정가": round(comp['adjusted_price'], 1),
-                                "절감액": round(comp['cost_reduction'], 1),
-                                "절감율": round(comp['reduction_rate'], 1)
+                                "통화": detected_cur,
+                                "제출가": round(sub_p, 3),
+                                "사정가": round(adj_p, 3),
+                                "절감액": round(red_p, 3),
+                                "절감율": round(red_r, 1)
                             }])
                             if os.path.exists(h_file):
                                 row.to_csv(h_file, mode='a', header=False, index=False, encoding="utf-8-sig")
@@ -225,23 +237,27 @@ with tab_main1:
                                 row.to_csv(h_file, mode='w', header=True, index=False, encoding="utf-8-sig")
 
                             m1, m2, m3, m4 = st.columns(4)
-                            cur_unit = f" {selected_cur}"
-                            m1.metric("제출가", f"{comp['submitted_price']:,.1f}{cur_unit}")
-                            m2.metric("사정가", f"{comp['adjusted_price']:,.1f}{cur_unit}")
-                            m3.metric("절감액", f"-{comp['cost_reduction']:,.1f}{cur_unit}")
-                            m4.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
+                            cur_unit = f" {detected_cur}"
+                            m1.metric("제출가", f"{sub_p:,.3f}{cur_unit}")
+                            m2.metric("사정가", f"{adj_p:,.3f}{cur_unit}")
+                            m3.metric("절감액", f"-{red_p:,.3f}{cur_unit}")
+                            m4.metric("절감율", f"-{red_r:.1f}%")
 
                             st.markdown("#### 📋 표준 견적 대조표")
-                            df = pd.DataFrame(data["cost_breakdown"])
-                            df.columns = ["구분", "항목", "제출가", "사정가", "차액", "사정 기준 및 사유"]
-                            st.dataframe(df, use_container_width=True, hide_index=True)
+                            breakdown_list = data.get("cost_breakdown", [])
+                            if isinstance(breakdown_list, list) and len(breakdown_list) > 0:
+                                df = pd.DataFrame(breakdown_list)
+                                if len(df.columns) >= 6:
+                                    df = df.iloc[:, :6]
+                                    df.columns = ["구분", "항목", "제출가", "사정가", "차액", "사정 기준 및 사유"]
+                                st.dataframe(df, use_container_width=True, hide_index=True)
 
-                            st.download_button(
-                                "📥 사정 원가계산서 CSV 다운로드",
-                                df.to_csv(index=False, encoding="utf-8-sig"),
-                                f"Audit_{fp}.csv",
-                                "text/csv"
-                            )
+                                st.download_button(
+                                    "📥 사정 원가계산서 CSV 다운로드",
+                                    df.to_csv(index=False, encoding="utf-8-sig"),
+                                    f"Audit_{fp}.csv",
+                                    "text/csv"
+                                )
                             st.divider()
                             st.markdown(data.get("audit_comment", ""))
                         except Exception as e:
