@@ -9,7 +9,7 @@ from streamlit_paste_button import paste_image_button
 # 1. 페이지 설정
 st.set_page_config(page_title="Cost Sheet Audit System", page_icon="📊", layout="wide")
 
-# 2. 다국어 텍스트 사전 (완전 통합 매핑)
+# 2. 다국어 텍스트 사전 및 공정 매핑
 I18N = {
     "한국어": {
         "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 사정 견적",
@@ -66,7 +66,17 @@ I18N = {
         "hist_search_p": "품번/품명 검색",
         "hist_dl_csv": "📥 전체 이력 CSV 다운로드",
         "hist_empty": "저장된 사정 이력이 없습니다. 견적서 분석을 실행하면 자동으로 누적 기록됩니다.",
-        "prompt_lang": "한국어로 상세하고 전문적인 원가 검토 의견 및 협력사 공식 네고 문구를 작성하세요."
+        "prompt_lang": "한국어로 상세하고 전문적인 원가 검토 의견 및 협력사 공식 네고 문구를 작성하세요.",
+        "proc_options": {
+            "프레스": "프레스",
+            "가공": "가공",
+            "사출": "사출",
+            "소결": "소결",
+            "다이캐스팅": "다이캐스팅",
+            "조립": "조립",
+            "일반구매": "일반구매",
+            "그 외": "그 외"
+        }
     },
     "English": {
         "title": "📊 Supplier Cost Sheet Audit & Target Cost System",
@@ -83,7 +93,7 @@ I18N = {
         "v_type": "Vehicle Model / Project",
         "p_no": "Part Number (P/N)",
         "p_name": "Part Name",
-        "proc_sel": "Manufacturing Process",
+        "proc_sel": "Select Manufacturing Process",
         "eff_lbl": "Equipment Efficiency Target (Max: {eff}%)",
         "labor_job": "Labor Category: {job}",
         "labor_rate": "Applied Labor Rate (KRW/sec)",
@@ -123,7 +133,17 @@ I18N = {
         "hist_search_p": "Filter by Part No / Part Name",
         "hist_dl_csv": "📥 Download All History (CSV)",
         "hist_empty": "No audit history found. Audited quotes will be automatically recorded here.",
-        "prompt_lang": "Provide the complete breakdown rationale and negotiation memo in ENGLISH."
+        "prompt_lang": "Provide the complete breakdown rationale and negotiation memo in ENGLISH.",
+        "proc_options": {
+            "프레스": "Press (Stamping)",
+            "가공": "Machining (CNC)",
+            "사출": "Plastic Injection",
+            "소결": "Sintering",
+            "다이캐스팅": "Die-Casting",
+            "조립": "Assembly",
+            "일반구매": "Standard Purchased Parts",
+            "그 외": "Others"
+        }
     },
     "中文": {
         "title": "📊 供应商报价/成本核算单审查与目标成本系统",
@@ -180,7 +200,17 @@ I18N = {
         "hist_search_p": "按零件号/零件名搜索",
         "hist_dl_csv": "📥 下载完整履历 (CSV)",
         "hist_empty": "暂无保存的核价履历。核价分析执行后将自动记录至此看板。",
-        "prompt_lang": "请使用简体中文输出详细的审查意见、剔除理由及向供应商发送的官方谈判公文。"
+        "prompt_lang": "请使用简体中文输出详细的审查意见、剔除理由及向供应商发送的官方谈判公文。",
+        "proc_options": {
+            "프레스": "冲压 (Press)",
+            "가공": "机加工 (CNC)",
+            "사출": "注塑 (Injection)",
+            "소결": "粉末冶金/烧结 (Sintering)",
+            "다이캐스팅": "压铸 (Die-Casting)",
+            "조립": "总成组装 (Assembly)",
+            "일반구매": "通用标准外购件",
+            "그 외": "其他制造工艺"
+        }
     }
 }
 
@@ -217,7 +247,7 @@ def get_smbs_rates():
         pass
     return rates
 
-# 4. 공정별 표준 데이터
+# 4. 공정별 내부 원가 산출 기준 데이터
 IND_MAP = {
     "프레스": {"eff": 85, "job": "판금/프레스조작원", "rate": 4.04, "oh": 220},
     "가공": {"eff": 90, "job": "선반/CNC기계조작원", "rate": 4.11, "oh": 200},
@@ -268,8 +298,12 @@ with st.sidebar:
     in_pnm = st.text_input(txt["p_name"], placeholder="예: STATOR / FLANGE")
 
     st.divider()
-    ind = st.selectbox(txt["proc_sel"], list(IND_MAP.keys()), index=0)
-    cfg = IND_MAP[ind]
+    # 공정명 다국어 드롭다운 매핑
+    proc_labels = list(txt["proc_options"].values())
+    selected_proc_label = st.selectbox(txt["proc_sel"], proc_labels, index=0)
+    # 선택된 라벨로부터 내부 키값(한국어 기준 키) 역추출
+    internal_proc_key = [k for k, v in txt["proc_options"].items() if v == selected_proc_label][0]
+    cfg = IND_MAP[internal_proc_key]
 
     std_eff = st.slider(txt["eff_lbl"].format(eff=cfg['eff']), 50, 95, cfg["eff"], 5)
     st.caption(txt["labor_job"].format(job=cfg['job']))
@@ -303,11 +337,12 @@ with tab_main1:
     with t1:
         cb1, cb2 = st.columns([2, 1])
         with cb1:
+            # key에 언어명(selected_lang)을 부여하여 언어 변경 시 캡처 버튼 텍스트가 즉시 갱신되도록 처리
             p_res = paste_image_button(
                 txt["paste_b"],
                 background_color="#1F4E79",
                 text_color="#FFF",
-                key=f"paste_btn_{st.session_state.paste_key_idx}"
+                key=f"paste_btn_{selected_lang}_{st.session_state.paste_key_idx}"
             )
         with cb2:
             if st.button(txt["clear_b"]):
@@ -353,7 +388,7 @@ with tab_main1:
 [입력정보] 차종: '{in_veh}', 품번: '{in_pno}', 품명: '{in_pnm}'
 [기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
 [사정기준]
-- 공정: {ind}, 설비효율: {std_eff}% 이상 필수
+- 공정: {internal_proc_key}, 설비효율: {std_eff}% 이상 필수
 - 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
 - 여유율: {std_et}%, 재료관리비: 순재료비의 {mat_r}% 이하
 - 간접경비: 상한 {oh_r}%, 일반관리비: Min({adm_r}%, 협력사치), 영업이익: Min({prf_r}%, 협력사치)
@@ -427,7 +462,7 @@ with tab_main1:
                             h_file = "audit_history.csv"
                             row = pd.DataFrame([{
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": ind,
+                                "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": selected_proc_label,
                                 "통화": detected_cur,
                                 "제출가": round(sub_p, 3),
                                 "사정가": round(adj_p, 3),
