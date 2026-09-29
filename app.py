@@ -187,25 +187,46 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
-                        try:
-                            res = client.models.generate_content(
-                                model="gemini-3.6-flash",
-                                contents=parts,
-                                config=types.GenerateContentConfig(response_mime_type="application/json")
-                            )
-                            c_raw = res.text.strip()
-                            c_raw = re.sub(r"^```json\s*", "", c_raw)
-                            c_raw = re.sub(r"^```\s*", "", c_raw)
-                            c_raw = re.sub(r"\s*```$", "", c_raw)
-                            raw_parsed = json.loads(c_raw, strict=False)
+                        # 503 / 429 트래픽 과부하 대비 4회 지수 백오프 및 폴백 처리
+                        candidate_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+                        data = None
+                        last_error = None
+                        
+                        for model_name in candidate_models:
+                            if data is not None:
+                                break
+                            for attempt in range(4):
+                                try:
+                                    res = client.models.generate_content(
+                                        model=model_name,
+                                        contents=parts,
+                                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                                    )
+                                    c_raw = res.text.strip()
+                                    c_raw = re.sub(r"^```json\s*", "", c_raw)
+                                    c_raw = re.sub(r"^```\s*", "", c_raw)
+                                    c_raw = re.sub(r"\s*```$", "", c_raw)
+                                    raw_parsed = json.loads(c_raw, strict=False)
 
-                            if isinstance(raw_parsed, list):
-                                data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
-                            elif isinstance(raw_parsed, dict):
-                                data = raw_parsed
-                            else:
-                                data = {}
-
+                                    if isinstance(raw_parsed, list):
+                                        data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
+                                    elif isinstance(raw_parsed, dict):
+                                        data = raw_parsed
+                                    else:
+                                        data = {}
+                                    break
+                                except Exception as e:
+                                    last_error = e
+                                    err_str = str(e)
+                                    if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
+                                        time.sleep(2 * (attempt + 1))
+                                        continue
+                                    else:
+                                        break
+                        
+                        if data is None:
+                            st.error(f"구글 AI 서버 접속 지연 오류: {last_error}")
+                        else:
                             item_info = data.get("item_info", {}) if isinstance(data.get("item_info"), dict) else {}
                             fv = in_veh or item_info.get("vehicle_type", "Unknown")
                             fp = in_pno or item_info.get("part_no", "Unknown")
@@ -258,8 +279,6 @@ with tab_main1:
                                 )
                             st.divider()
                             st.markdown(data.get("audit_comment", ""))
-                        except Exception as e:
-                            st.error(f"오류 발생: {e}")
 
 # TAB 2: 이력 관리
 with tab_main2:
