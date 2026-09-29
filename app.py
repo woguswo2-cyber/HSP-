@@ -197,15 +197,13 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
-                        # 무료 티어에서도 쿼터 제한 없이 안정적인 Flash 모델 단독 사용
-                        target_model = "gemini-2.5-flash"
                         data = None
                         last_error = None
                         
                         for attempt in range(4):
                             try:
                                 res = client.models.generate_content(
-                                    model=target_model,
+                                    model="gemini-3.6-flash",
                                     contents=parts,
                                     config=types.GenerateContentConfig(response_mime_type="application/json")
                                 )
@@ -226,7 +224,6 @@ with tab_main1:
                                 last_error = e
                                 err_str = str(e)
                                 if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
-                                    # 429 발생 시 대기 시간 후 재시도
                                     time.sleep(3 * (attempt + 1))
                                     continue
                                 else:
