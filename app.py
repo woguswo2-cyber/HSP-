@@ -9,10 +9,10 @@ from streamlit_paste_button import paste_image_button
 # 1. 페이지 설정
 st.set_page_config(page_title="구매 견적 타당성 검토", page_icon="📊", layout="wide")
 
-# 2. 환율 크롤링
+# 2. 서울외환중개(SMBS) 환율 크롤링
 @st.cache_data(ttl=3600)
-def get_fx_rates():
-    d = {"USD": 1380.0, "CNY": 192.0, "EUR": 1500.0, "INR": 16.5}
+def get_smbs_rates():
+    d = {"KRW": 1.0, "USD": 1380.0, "CNY": 192.0, "EUR": 1500.0, "INR": 16.5}
     try:
         req = urllib.request.Request("http://www.smbs.biz/ExRate/TodayExRate.jsp", headers={'User-Agent': 'Mozilla/5.0'})
         html = urllib.request.urlopen(req, timeout=2.5).read().decode('euc-kr', 'ignore')
@@ -24,7 +24,7 @@ def get_fx_rates():
         pass
     return d
 
-# 3. 공정 데이터
+# 3. 공정별 표준 데이터
 IND_MAP = {
     "프레스": {"eff": 85, "job": "판금/프레스조작원", "rate": 4.04, "oh": 220},
     "가공": {"eff": 90, "job": "선반/CNC기계조작원", "rate": 4.11, "oh": 200},
@@ -36,7 +36,7 @@ IND_MAP = {
     "그 외": {"eff": 80, "job": "제조업 생산직 평균", "rate": 3.98, "oh": 100}
 }
 
-# 4. 사이드바 설정
+# 4. 사이드바 설정 영역
 with st.sidebar:
     lang = st.selectbox("🌐 Language", ["한국어", "English", "中文"], index=0)
     st.header("⚙️ 분석 기준 설정")
@@ -48,15 +48,23 @@ with st.sidebar:
         api_key = st.text_input("Gemini API Key", type="password")
         
     st.divider()
-    st.subheader("💱 SMBS 기준 환율")
-    fx = get_fx_rates()
-    c1, c2 = st.columns(2)
-    with c1:
-        r_usd = st.number_input("USD", value=float(fx["USD"]), step=1.0)
-        r_cny = st.number_input("CNY", value=float(fx["CNY"]), step=0.5)
-    with c2:
-        r_eur = st.number_input("EUR", value=float(fx["EUR"]), step=1.0)
-        r_inr = st.number_input("INR", value=float(fx["INR"]), step=0.1)
+    # 통화 드롭다운 선택 기능
+    st.subheader("💱 기준 통화 및 환율 선택")
+    all_rates = get_smbs_rates()
+    selected_cur = st.selectbox("기준 통화 선택", ["KRW", "USD", "CNY", "EUR", "INR"], index=0)
+    
+    if selected_cur == "KRW":
+        cur_rate = 1.0
+        st.info("원화(KRW) 기준 (환율: 1.0)")
+    else:
+        cur_rate = st.number_input(
+            f"{selected_cur} 적용 환율 (원화 대비)", 
+            value=float(all_rates.get(selected_cur, 1.0)), 
+            step=1.0 if selected_cur in ["USD", "EUR"] else 0.1,
+            format="%.2f",
+            help="서울외환중개(SMBS) 당일 기준환율 자동 매핑 (직접 수정 가능)"
+        )
+        st.caption("🔗 [서울외환중개(SMBS) 시세 연동](http://www.smbs.biz/ExRate/TodayExRate.jsp)")
 
     st.divider()
     st.subheader("🚘 부품/프로젝트 정보")
@@ -135,7 +143,7 @@ with tab_main1:
                         p_txt = f"""
                         자동차 부품 구매팀 원가 분석관으로서 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
                         [입력정보] 차종:'{in_veh}', 품번:'{in_pno}', 품명:'{in_pnm}'
-                        [기준환율] USD:{r_usd}, CNY:{r_cny}, EUR:{r_eur}, INR:{r_inr} KRW
+                        [기준통화] {selected_cur} (적용환율: {cur_rate} KRW/{selected_cur})
                         [사정기준]
                         - 공정: {ind}, 설비효율: {std_eff}% 이상 필수
                         - 임율: {std_rate}원/초 (협력사가 더 낮으면 협력사 임율 유지)
@@ -180,6 +188,7 @@ with tab_main1:
                             row = pd.DataFrame([{
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": ind,
+                                "통화": selected_cur,
                                 "제출가": round(comp['submitted_price'], 1),
                                 "사정가": round(comp['adjusted_price'], 1),
                                 "절감액": round(comp['cost_reduction'], 1),
@@ -191,9 +200,10 @@ with tab_main1:
                                 row.to_csv(h_file, mode='w', header=True, index=False, encoding="utf-8-sig")
 
                             m1, m2, m3, m4 = st.columns(4)
-                            m1.metric("제출가", f"{comp['submitted_price']:,.1f}")
-                            m2.metric("사정가", f"{comp['adjusted_price']:,.1f}")
-                            m3.metric("절감액", f"-{comp['cost_reduction']:,.1f}")
+                            cur_unit = f" {selected_cur}"
+                            m1.metric("제출가", f"{comp['submitted_price']:,.1f}{cur_unit}")
+                            m2.metric("사정가", f"{comp['adjusted_price']:,.1f}{cur_unit}")
+                            m3.metric("절감액", f"-{comp['cost_reduction']:,.1f}{cur_unit}")
                             m4.metric("절감율", f"-{comp['reduction_rate']:.1f}%")
 
                             st.markdown("#### 📋 표준 견적 대조표")
@@ -212,39 +222,54 @@ with tab_main1:
                         except Exception as e:
                             st.error(f"오류 발생: {e}")
 
-# TAB 2: 이력 관리
+# TAB 2: 이력 관리 (안전한 컬럼 조회 적용)
 with tab_main2:
     st.subheader("📊 부품/차종별 누적 원가 사정 이력")
     h_file = "audit_history.csv"
     if os.path.exists(h_file):
-        hdf = pd.read_csv(h_file, encoding="utf-8-sig")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("총 검토 건수", f"{len(hdf)} 건")
-        c2.metric("총 제출가 합계", f"{hdf['제출가'].sum():,.0f} 원")
-        c3.metric("총 사정가 합계", f"{hdf['사정가'].sum():,.0f} 원")
-        c4.metric("총 절감 기여액", f"-{hdf['절감액'].sum():,.0f} 원")
-        
-        st.divider()
-        fc1, fc2 = st.columns(2)
-        with fc1:
-            q_v = st.text_input("차종 검색", "")
-        with fc2:
-            q_p = st.text_input("품번/품명 검색", "")
+        try:
+            hdf = pd.read_csv(h_file, encoding="utf-8-sig")
             
-        res_df = hdf
-        if q_v:
-            res_df = res_df[res_df["차종"].astype(str).str.contains(q_v, na=False, case=False)]
-        if q_p:
-            c_p = res_df["품번"].astype(str).str.contains(q_p, na=False, case=False)
-            c_n = res_df["품명"].astype(str).str.contains(q_p, na=False, case=False)
-            res_df = res_df[c_p | c_n]
+            # 구버전 컬럼명 호환 처리
+            col_sub = "제출가" if "제출가" in hdf.columns else "제출가(원)"
+            col_adj = "사정가" if "사정가" in hdf.columns else "사정가(원)"
+            col_sav = "절감액" if "절감액" in hdf.columns else "절감액(원)"
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("총 검토 건수", f"{len(hdf)} 건")
+            c2.metric("총 제출가 합계", f"{pd.to_numeric(hdf[col_sub], errors='coerce').fillna(0).sum():,.0f}")
+            c3.metric("총 사정가 합계", f"{pd.to_numeric(hdf[col_adj], errors='coerce').fillna(0).sum():,.0f}")
+            c4.metric("총 절감 기여액", f"-{pd.to_numeric(hdf[col_sav], errors='coerce').fillna(0).sum():,.0f}")
             
-        st.dataframe(res_df, use_container_width=True, hide_index=True)
-        st.download_button(
-            "📥 전체 이력 CSV 다운로드",
-            hdf.to_csv(index=False, encoding="utf-8-sig"),
-            "All_Audit_History.csv",
-            "text/csv"
-        )
+            st.divider()
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                q_v = st.text_input("차종 검색", "")
+            with fc2:
+                q_p = st.text_input("품번/품명 검색", "")
+                
+            res_df = hdf
+            if q_v and "차종" in res_df.columns:
+                res_df = res_df[res_df["차종"].astype(str).str.contains(q_v, na=False, case=False)]
+            if q_p:
+                cond = pd.Series([False] * len(res_df), index=res_df.index)
+                if "품번" in res_df.columns:
+                    cond |= res_df["품번"].astype(str).str.contains(q_p, na=False, case=False)
+                if "품명" in res_df.columns:
+                    cond |= res_df["품명"].astype(str).str.contains(q_p, na=False, case=False)
+                res_df = res_df[cond]
+                
+            st.dataframe(res_df, use_container_width=True, hide_index=True)
+            st.download_button(
+                "📥 전체 이력 CSV 다운로드",
+                hdf.to_csv(index=False, encoding="utf-8-sig"),
+                "All_Audit_History.csv",
+                "text/csv"
+            )
+        except Exception as e:
+            st.error(f"이력 로딩 중 오류 발생: {e}")
+            if st.button("기존 이력 파일 초기화"):
+                os.remove(h_file)
+                st.rerun()
     else:
         st.info("저장된 사정 이력이 없습니다. 견적서 분석을 실행하면 자동으로 누적 기록됩니다.")
