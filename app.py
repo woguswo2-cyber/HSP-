@@ -114,6 +114,8 @@ tab_main1, tab_main2 = st.tabs(["🔍 견적 분석 및 사정", "🕒 사정 �
 with tab_main1:
     if "clip_imgs" not in st.session_state:
         st.session_state.clip_imgs = []
+    if "paste_key_idx" not in st.session_state:
+        st.session_state.paste_key_idx = 0
 
     st.write("### 📂 견적서 등록 (갑지/을지 다중 등록 가능)")
     t1, t2 = st.tabs(["📋 클립보드 붙여넣기", "📁 파일 업로드"])
@@ -122,17 +124,26 @@ with tab_main1:
     with t1:
         cb1, cb2 = st.columns([2, 1])
         with cb1:
-            p_res = paste_image_button("📋 캡처 추가하기", background_color="#1F4E79", text_color="#FFF")
+            # key를 동적으로 부여하여 초기화 시 컴포넌트 자체를 강제 리셋
+            p_res = paste_image_button(
+                "📋 캡처 추가하기", 
+                background_color="#1F4E79", 
+                text_color="#FFF",
+                key=f"paste_btn_{st.session_state.paste_key_idx}"
+            )
         with cb2:
             if st.button("🗑️ 붙여넣기 초기화"):
                 st.session_state.clip_imgs = []
+                st.session_state.paste_key_idx += 1
                 st.rerun()
+
         if p_res.image_data is not None:
             buf = io.BytesIO()
             p_res.image_data.save(buf, format="PNG")
             nb = buf.getvalue()
             if not st.session_state.clip_imgs or st.session_state.clip_imgs[-1] != nb:
                 st.session_state.clip_imgs.append(nb)
+                
         if st.session_state.clip_imgs:
             imgs = st.session_state.clip_imgs
             st.info(f"등록된 캡처본: {len(imgs)}장")
@@ -187,7 +198,6 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
                         
-                        # 2026년 정식 지원 모델 (gemini-3.6-flash 우선, 과부하시 gemini-3.1-pro-preview 폴백)
                         candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
                         data = None
                         last_error = None
