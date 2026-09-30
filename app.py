@@ -7,13 +7,13 @@ from google.genai import types
 from streamlit_paste_button import paste_image_button
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Cost Sheet Audit System", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Cost Sheet Audit & Benchmark System", page_icon="📊", layout="wide")
 
 # 2. 다국어 텍스트 사전 및 공정 매핑
 I18N = {
     "한국어": {
-        "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 목표가(Target) 역산 산출",
-        "caption": "설비효율, 기계경비 배부율, SMBS 환율, 다중 견적서(갑/을지) 교차검증 및 목표단가 역설계(Reverse Engineering)를 지원합니다.",
+        "title": "📊 협력사 견적/원가계산서 타당성 자동 분석 및 체리피킹 비교 시스템",
+        "caption": "설비효율, 기계경비 배부율, SMBS 환율, 목표가 역산 및 2개사 견적 1:1 비교(체리피킹)를 지원합니다.",
         "settings": "⚙️ 분석 기준 설정",
         "api_auto": "🔑 API Key 자동 연동 완료",
         "api_input": "Gemini API Key 입력",
@@ -39,7 +39,8 @@ I18N = {
         "admin_r": "일반관리비율 상한 (%)",
         "profit_r": "영업이익율 상한 (%)",
         "scrap_lbl": "실 스크랩 매각가 (원/kg)",
-        "tab_audit": "🔍 견적 분석 및 목표가 산출",
+        "tab_audit": "🔍 단일 견적 분석 & 목표가 산출",
+        "tab_compare": "⚔️ 2개사 견적 비교 & 체리피킹",
         "tab_history": "🕒 사정 이력 대시보드",
         "up_hdr": "📂 견적서 등록 (갑지/을지 다중 등록 가능)",
         "paste_tab": "📋 클립보드 붙여넣기",
@@ -52,6 +53,7 @@ I18N = {
         "res_hdr": "🔍 분석 및 사정 견적 (타겟 역산)",
         "api_warn": "👈 사이드바에 API Key를 설정해주세요.",
         "exec_b": "🚀 사정 원가계산서 산출",
+        "exec_compare_b": "⚔️ 2개사 견적 대조 및 체리피킹 분석 실행",
         "sub_p": "협력사 제출가",
         "adj_p": "당사 사정(목표)가",
         "diff_p": "절감 가능액",
@@ -78,8 +80,8 @@ I18N = {
         }
     },
     "English": {
-        "title": "📊 Supplier Cost Sheet Audit & Target Cost Engineering System",
-        "caption": "Supports equipment efficiency, overhead allocation, SMBS FX rates, multi-sheet audit, and Target Price reverse allocation.",
+        "title": "📊 Supplier Cost Sheet Audit & Cherry-Picking Benchmark System",
+        "caption": "Supports equipment efficiency, overhead allocation, SMBS FX rates, Target Price reverse engineering, and 1:1 cross-supplier benchmark.",
         "settings": "⚙️ Audit Configuration",
         "api_auto": "🔑 API Key Automatically Connected",
         "api_input": "Enter Gemini API Key",
@@ -105,7 +107,8 @@ I18N = {
         "admin_r": "SG&A Rate Ceiling (%)",
         "profit_r": "Profit Rate Ceiling (%)",
         "scrap_lbl": "Actual Scrap Sales Unit Price (KRW/kg)",
-        "tab_audit": "🔍 Cost Audit & Target Price",
+        "tab_audit": "🔍 Single Quote Audit & Target Cost",
+        "tab_compare": "⚔️ 2-Supplier Cross Audit & Cherry-Picking",
         "tab_history": "🕒 Audit History Dashboard",
         "up_hdr": "📂 Upload Quotation Sheets (Multi-sheet Support)",
         "paste_tab": "📋 Clipboard Paste",
@@ -118,6 +121,7 @@ I18N = {
         "res_hdr": "🔍 Audit Verdict & Target Breakdown",
         "api_warn": "👈 Please configure Gemini API Key in sidebar.",
         "exec_b": "🚀 Calculate Target Cost",
+        "exec_compare_b": "⚔️ Run 2-Supplier Benchmark & Cherry-Picking",
         "sub_p": "Quoted Price",
         "adj_p": "Target Cost",
         "diff_p": "Savings Potential",
@@ -144,8 +148,8 @@ I18N = {
         }
     },
     "中文": {
-        "title": "📊 供应商报价/成本核算单审查与目标成本(Target)反向核算系统",
-        "caption": "支持工艺稼动率、机械间接费分摊、首尔外汇中介基准汇率、多页报价交叉验证及目标价反向分解设计。",
+        "title": "📊 供应商报价审查、目标价反向核算及双供应商择优比价(Cherry-Picking)系统",
+        "caption": "支持工艺稼动率、机械间接费分摊、首尔外汇中介基准汇率、目标价反向分解设计及两家供应商1:1交叉比价择优核算。",
         "settings": "⚙️ 审查及目标成本核算基准设置",
         "api_auto": "🔑 API Key 自动绑定成功",
         "api_input": "输入 Gemini API Key",
@@ -171,7 +175,8 @@ I18N = {
         "admin_r": "一般管理费率上限 (%)",
         "profit_r": "利润率上限 (%)",
         "scrap_lbl": "废料实际变卖单价 (韩元/kg)",
-        "tab_audit": "🔍 报价审查与目标价核算",
+        "tab_audit": "🔍 单个报价审查与目标价核算",
+        "tab_compare": "⚔️ 双供应商比价与择优(Cherry-Picking)",
         "tab_history": "🕒 核价履历管理看板",
         "up_hdr": "📂 录入审查报价单 (支持多页/附件同时比对)",
         "paste_tab": "📋 剪贴板截图粘贴",
@@ -184,6 +189,7 @@ I18N = {
         "res_hdr": "🔍 合理性审查及目标成本倒推",
         "api_warn": "👈 请在左侧侧边栏配置 Gemini API Key。",
         "exec_b": "🚀 自动核算目标成本核算单",
+        "exec_compare_b": "⚔️ 执行双供应商对标比价及择优组合分析",
         "sub_p": "供应商提报单价",
         "adj_p": "我司目标核算单价",
         "diff_p": "预计降本金额",
@@ -293,8 +299,7 @@ with st.sidebar:
     in_veh = st.text_input(txt["v_type"], placeholder="예: TB6S / TB7")
     in_pno = st.text_input(txt["p_no"], placeholder="예: 68000511010")
     in_pnm = st.text_input(txt["p_name"], placeholder="예: STATOR / FLANGE")
-    
-    # 🎯 목표 타겟 단가 입력칸 신설
+
     target_price_input = st.number_input(
         txt["target_p_label"],
         min_value=0.0,
@@ -325,12 +330,15 @@ with st.sidebar:
 
     scrap_p = st.number_input(txt["scrap_lbl"], min_value=0, value=12500, step=500)
 
-# 6. 메인 레이아웃
+# 6. 메인 레이아웃 (3대 탭 구성)
 st.title(txt["title"])
 st.caption(txt["caption"])
 
-tab_main1, tab_main2 = st.tabs([txt["tab_audit"], txt["tab_history"]])
+tab_main1, tab_main2, tab_main3 = st.tabs([txt["tab_audit"], txt["tab_compare"], txt["tab_history"]])
 
+# ==========================================
+# TAB 1: 단일 견적 분석 & 목표가 역산
+# ==========================================
 with tab_main1:
     if "clip_imgs" not in st.session_state:
         st.session_state.clip_imgs = []
@@ -351,7 +359,7 @@ with tab_main1:
                 key=f"paste_btn_{selected_lang}_{st.session_state.paste_key_idx}"
             )
         with cb2:
-            if st.button(txt["clear_b"]):
+            if st.button(txt["clear_b"], key="btn_clear_single"):
                 st.session_state.clip_imgs = []
                 st.session_state.paste_key_idx += 1
                 st.rerun()
@@ -368,7 +376,7 @@ with tab_main1:
             st.info(txt["count_msg"].format(count=len(imgs)))
 
     with t2:
-        u_files = st.file_uploader(txt["file_up_lbl"], type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        u_files = st.file_uploader(txt["file_up_lbl"], type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="single_up_files")
         if u_files:
             imgs = [f.getvalue() for f in u_files]
 
@@ -384,12 +392,11 @@ with tab_main1:
             if not api_key:
                 st.warning(txt["api_warn"])
             else:
-                if st.button(txt["exec_b"], type="primary"):
+                if st.button(txt["exec_b"], type="primary", key="btn_exec_single"):
                     with st.spinner("Analyzing quotes and computing target cost engineering..."):
                         client = genai.Client(api_key=api_key)
                         parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in imgs]
 
-                        # 목표 단가 설정 여부에 따른 지침 분기
                         target_instruction = ""
                         if target_price_input > 0:
                             target_instruction = f"""
@@ -397,11 +404,6 @@ with tab_main1:
 - 사용자가 최종 도달해야 할 Target Price를 '{target_price_input} {selected_cur}'로 지정했습니다.
 - 따라서 최종 adjusted_price는 반드시 지정된 {target_price_input}에 수렴하도록 역산하십시오.
 - 협력사 제출가와 타겟단가 사이의 총 절감 필요액을 원가 요소별(재료비, 가공비, 일반관리비, 이윤, 물류비 등)로 합리적으로 배분하십시오.
-- [원가 요소별 역산 우선순위 및 구체적 지침]:
-  1) 1순위(부풀린 마진/관리비): 일반관리비율을 당사 상한({adm_r}%)으로 깎고, 이윤율도 상한({prf_r}%) 및 순가공비 기준으로만 제한.
-  2) 2순위(가공비/C/T 단축 요구): C/T를 몇 초 단축해야 하는지, 설비 효율을 몇 %로 끌어올려야 가공비 목표가 나오는지 역산 명시.
-  3) 3순위(재료비 로스율 최적화): 런너 중량 축소, 분쇄재 배합 비율 확대(가능한 경우), 투입 단중 다이어트 요구치 산출.
-  4) 4순위(포장/물류비): 적재율 개선을 통한 운반비 절감액 배분.
 - cost_breakdown의 note 열에는 단순 기준이 아니라, "타겟 달성을 위해 C/T 5초 단축 필요(-0.25)", "관리비율 10% 강제 축소(-0.12)" 등 협력사에 요구할 구체적인 기술적 액션 플랜을 기재하세요.
 """
                         else:
@@ -529,15 +531,229 @@ with tab_main1:
                             st.divider()
                             st.markdown(data.get("audit_comment", ""))
 
-# TAB 2: 이력 관리 대시보드
+# ==========================================
+# TAB 2: 2개사 견적 1:1 비교 & 체리피킹 (신규)
+# ==========================================
 with tab_main2:
+    st.subheader("⚔️ 협력사 2개사 견적 대조 및 체리피킹(Cherry-Picking) 최저 원가 도출")
+    st.caption("동일 부품에 대해 두 업체의 견적서를 1:1로 맞대어 각 세부 항목별 최저가를 결합한 가상 최저단가(Best-of-Best) 및 상호 네고 논리를 산출합니다.")
+
+    if "cmp_imgs_a" not in st.session_state:
+        st.session_state.cmp_imgs_a = []
+    if "cmp_imgs_b" not in st.session_state:
+        st.session_state.cmp_imgs_b = []
+    if "cmp_paste_idx_a" not in st.session_state:
+        st.session_state.cmp_paste_idx_a = 0
+    if "cmp_paste_idx_b" not in st.session_state:
+        st.session_state.cmp_paste_idx_b = 0
+
+    col_a, col_b = st.columns(2, gap="large")
+
+    # [A사 견적서 등록]
+    with col_a:
+        st.markdown("### 🏢 [업체 A] 견적서 등록")
+        s_name_a = st.text_input("업체 A 이름", value="", placeholder="예: 모텍 / 업체 A")
+        ca1, ca2 = st.tabs(["📋 붙여넣기", "📁 파일업로드"])
+        imgs_a = []
+        with ca1:
+            p_a = paste_image_button("📋 A사 캡처 추가", background_color="#0F52BA", text_color="#FFF", key=f"paste_a_{st.session_state.cmp_paste_idx_a}")
+            if st.button("🗑️ A사 초기화", key="clr_a"):
+                st.session_state.cmp_imgs_a = []
+                st.session_state.cmp_paste_idx_a += 1
+                st.rerun()
+            if p_a.image_data is not None:
+                b = io.BytesIO()
+                p_a.image_data.save(b, format="PNG")
+                nb = b.getvalue()
+                if not st.session_state.cmp_imgs_a or st.session_state.cmp_imgs_a[-1] != nb:
+                    st.session_state.cmp_imgs_a.append(nb)
+            if st.session_state.cmp_imgs_a:
+                imgs_a = st.session_state.cmp_imgs_a
+                st.info(f"A사 캡처: {len(imgs_a)}장")
+        with ca2:
+            up_a = st.file_uploader("A사 파일 선택", type=["png","jpg","jpeg"], accept_multiple_files=True, key="up_a")
+            if up_a:
+                imgs_a = [f.getvalue() for f in up_a]
+
+        if imgs_a:
+            for i, im in enumerate(imgs_a):
+                st.image(im, caption=f"A사 Page {i+1}", use_container_width=True)
+
+    # [B사 견적서 등록]
+    with col_b:
+        st.markdown("### 🏢 [업체 B] 견적서 등록")
+        s_name_b = st.text_input("업체 B 이름", value="", placeholder="예: ZEB / 업체 B")
+        cb1, cb2 = st.tabs(["📋 붙여넣기", "📁 파일업로드"])
+        imgs_b = []
+        with cb1:
+            p_b = paste_image_button("📋 B사 캡처 추가", background_color="#B22222", text_color="#FFF", key=f"paste_b_{st.session_state.cmp_paste_idx_b}")
+            if st.button("🗑️ B사 초기화", key="clr_b"):
+                st.session_state.cmp_imgs_b = []
+                st.session_state.cmp_paste_idx_b += 1
+                st.rerun()
+            if p_b.image_data is not None:
+                b = io.BytesIO()
+                p_b.image_data.save(b, format="PNG")
+                nb = b.getvalue()
+                if not st.session_state.cmp_imgs_b or st.session_state.cmp_imgs_b[-1] != nb:
+                    st.session_state.cmp_imgs_b.append(nb)
+            if st.session_state.cmp_imgs_b:
+                imgs_b = st.session_state.cmp_imgs_b
+                st.info(f"B사 캡처: {len(imgs_b)}장")
+        with cb2:
+            up_b = st.file_uploader("B사 파일 선택", type=["png","jpg","jpeg"], accept_multiple_files=True, key="up_b")
+            if up_b:
+                imgs_b = [f.getvalue() for f in up_b]
+
+        if imgs_b:
+            for i, im in enumerate(imgs_b):
+                st.image(im, caption=f"B사 Page {i+1}", use_container_width=True)
+
+    st.divider()
+    if not (imgs_a and imgs_b):
+        st.warning("👈 A사와 B사의 견적서 이미지를 각각 1장 이상 등록해야 체리피킹 비교가 가능합니다.")
+    else:
+        if st.button(txt["exec_compare_b"], type="primary", key="btn_exec_compare"):
+            if not api_key:
+                st.warning(txt["api_warn"])
+            else:
+                with st.spinner("2개사 견적서 교차 대조 및 체리피킹 최적 원가 분석 중..."):
+                    client = genai.Client(api_key=api_key)
+                    parts_cmp = []
+                    parts_cmp.append("=== [업체 A 견적서 이미지들 시작] ===")
+                    for b in imgs_a:
+                        parts_cmp.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+                    parts_cmp.append("=== [업체 B 견적서 이미지들 시작] ===")
+                    for b in imgs_b:
+                        parts_cmp.append(types.Part.from_bytes(data=b, mime_type="image/png"))
+
+                    prompt_cmp = f"""
+당신은 자동차 소형 모터 구매팀의 수석 원가 분석관입니다.
+동일 부품에 대해 제출된 [업체 A]와 [업체 B]의 견적서를 1:1로 정밀 교차 비교하고 '체리피킹(Cherry-Picking) 최저 원가'를 도출하십시오.
+
+[사전 정보]
+- 프로젝트/차종: '{in_veh}', 품번: '{in_pno}', 품명: '{in_pnm}'
+- 공정: {internal_proc_key}
+- 기준통화: {selected_cur} (1 {selected_cur} = {cur_rate} KRW)
+- 업체 A 명칭: '{s_name_a or "A사"}'
+- 업체 B 명칭: '{s_name_b or "B사"}'
+
+[핵심 분석 및 체리피킹 지침]
+1. 양사의 원가 항목(순재료비, 가공비/C/T, 일반관리비, 이윤, 포장운반비 등)을 완벽히 1:1 매칭하여 비교표를 작성하세요.
+2. 각 세부 항목별로 더 저렴한 쪽의 단가와 합리적인 근거(예: A사의 원자재 단가, B사의 빠른 C/T)를 채택하여 '체리피킹 최저단가(Best-of-Best Price)'를 산출하세요.
+3. 총 견적가 비교: A사 총액 vs B사 총액 vs 체리피킹 조합 총액을 명시하세요.
+4. 양방향 네고 공문 작성:
+   - A사용 네고 전략: B사 대비 과다하게 비싼 항목(예: 가공비, C/T 과다, 관리비율 등)을 지적하여 삭감 요구
+   - B사용 네고 전략: A사 대비 과다하게 비싼 항목(예: 재료단가, 스크랩 미환입, 물류비 등)을 지적하여 삭감 요구
+5. 언어: {txt['prompt_lang']}
+
+[JSON 응답 규격]
+반드시 최상위가 단일 JSON Object 형태여야 합니다:
+{{
+  "summary": {{
+    "supplier_a": "{s_name_a or 'A사'}",
+    "supplier_b": "{s_name_b or 'B사'}",
+    "total_a": 0.0,
+    "total_b": 0.0,
+    "cherry_pick_total": 0.0,
+    "currency": "{selected_cur}"
+  }},
+  "comparison_table": [
+    {{
+      "item": "원가항목명 (예: 순재료비, 가공비)",
+      "price_a": 0.0,
+      "price_b": 0.0,
+      "diff": 0.0,
+      "cherry_pick_winner": "A사 또는 B사",
+      "cherry_pick_price": 0.0,
+      "rationale": "비교 분석 내용 및 체리피킹 사유"
+    }}
+  ],
+  "nego_for_a": "A사에 보낼 기술적 네고 요구 공문",
+  "nego_for_b": "B사에 보낼 기술적 네고 요구 공문"
+}}
+"""
+                    parts_cmp.append(prompt_cmp)
+
+                    cmp_data = None
+                    last_cmp_err = None
+                    for attempt in range(4):
+                        try:
+                            res = client.models.generate_content(
+                                model="gemini-3.6-flash",
+                                contents=parts_cmp,
+                                config=types.GenerateContentConfig(response_mime_type="application/json")
+                            )
+                            c_raw = res.text.strip()
+                            c_raw = re.sub(r"^```json\s*", "", c_raw)
+                            c_raw = re.sub(r"^```\s*", "", c_raw)
+                            c_raw = re.sub(r"\s*```$", "", c_raw)
+                            cmp_data = json.loads(c_raw, strict=False)
+                            break
+                        except Exception as e:
+                            last_cmp_err = e
+                            err_str = str(e)
+                            if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
+                                time.sleep(3 * (attempt + 1))
+                                continue
+                            else:
+                                break
+
+                    if cmp_data is None:
+                        st.error(f"비교 분석 중 오류 발생: {last_cmp_err}")
+                    else:
+                        summ = cmp_data.get("summary", {})
+                        tot_a = float(summ.get("total_a", 0.0))
+                        tot_b = float(summ.get("total_b", 0.0))
+                        tot_cp = float(summ.get("cherry_pick_total", 0.0))
+                        cur_str = f" {summ.get('currency', selected_cur)}"
+
+                        sa_name = summ.get("supplier_a", "A사")
+                        sb_name = summ.get("supplier_b", "B사")
+
+                        st.success("🎯 2개사 견적 대조 및 체리피킹 최적가 산출 완료")
+                        mc1, mc2, mc3, mc4 = st.columns(4)
+                        mc1.metric(f"🏢 {sa_name} 견적", f"{tot_a:,.3f}{cur_str}")
+                        mc2.metric(f"🏢 {sb_name} 견적", f"{tot_b:,.3f}{cur_str}")
+                        mc3.metric("🍒 체리피킹 최저단가", f"{tot_cp:,.3f}{cur_str}")
+                        gap_val = min(tot_a, tot_b) - tot_cp
+                        mc4.metric("추가 절감 잠재액", f"-{gap_val:,.3f}{cur_str}")
+
+                        st.markdown("#### 📋 세부 원가 항목 1:1 대조 및 체리피킹 표")
+                        c_table = cmp_data.get("comparison_table", [])
+                        if c_table:
+                            df_cmp = pd.DataFrame(c_table)
+                            if len(df_cmp.columns) >= 7:
+                                df_cmp = df_cmp.iloc[:, :7]
+                                df_cmp.columns = ["원가 항목", f"{sa_name} 견적", f"{sb_name} 견적", "차액 (A-B)", "채택 업체", "체리피킹 단가", "비교 분석 및 채택 사유"]
+                            st.dataframe(df_cmp, use_container_width=True, hide_index=True)
+
+                            st.download_button(
+                                "📥 2개사 견적 비교 및 체리피킹 대조표 CSV 다운로드",
+                                df_cmp.to_csv(index=False, encoding="utf-8-sig"),
+                                f"CherryPick_Compare_{in_pno or 'Part'}.csv",
+                                "text/csv"
+                            )
+
+                        st.divider()
+                        nc1, nc2 = st.columns(2)
+                        with nc1:
+                            st.markdown(f"#### ✉️ [{sa_name}] 발송용 타격 네고 공문")
+                            st.info(cmp_data.get("nego_for_a", ""))
+                        with nc2:
+                            st.markdown(f"#### ✉️ [{sb_name}] 발송용 타격 네고 공문")
+                            st.info(cmp_data.get("nego_for_b", ""))
+
+# ==========================================
+# TAB 3: 이력 관리 대시보드
+# ==========================================
+with tab_main3:
     st.subheader(txt["hist_hdr"])
     h_file = "audit_history.csv"
     if os.path.exists(h_file):
         try:
             hdf = pd.read_csv(h_file, encoding="utf-8-sig")
 
-            # 검색 필터 3분할 (차종, 품번/품명, 협력사)
             fc1, fc2, fc3 = st.columns(3)
             with fc1:
                 q_v = st.text_input(txt["hist_search_v"], "")
