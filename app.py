@@ -9,6 +9,16 @@ from streamlit_paste_button import paste_image_button
 # 1. 페이지 설정
 st.set_page_config(page_title="Cost Sheet Audit & Benchmark System", page_icon="📊", layout="wide")
 
+# 소수점 동적 포맷 헬퍼 (견적서 원본 자릿수 보존)
+def fmt_price(val, prec=0):
+    try:
+        fval = float(val)
+        if prec == 0:
+            return f"{fval:,.0f}"
+        return f"{fval:,.{prec}f}"
+    except Exception:
+        return str(val)
+
 # 2. 다국어 텍스트 사전 및 공정 매핑
 I18N = {
     "한국어": {
@@ -304,12 +314,12 @@ with st.sidebar:
         txt["target_p_label"],
         min_value=0.0,
         value=0.0,
-        step=1.0 if selected_cur in ["KRW", "USD"] else 0.01,
+        step=1.0 if selected_cur == "KRW" else 0.01,
         format="%.3f" if selected_cur in ["USD", "CNY", "EUR"] else "%.1f",
         help=txt["target_p_help"]
     )
     if target_price_input > 0:
-        st.success(f"🎯 Target Mode: {target_price_input:,.3f} {selected_cur}")
+        st.success(f"🎯 Target Mode: {target_price_input} {selected_cur}")
 
     st.divider()
     proc_labels = list(txt["proc_options"].values())
@@ -330,7 +340,7 @@ with st.sidebar:
 
     scrap_p = st.number_input(txt["scrap_lbl"], min_value=0, value=12500, step=500)
 
-# 6. 메인 레이아웃 (3대 탭 구성)
+# 6. 메인 레이아웃
 st.title(txt["title"])
 st.caption(txt["caption"])
 
@@ -403,17 +413,13 @@ with tab_main1:
 [🎯 최우선 특별 임무: 목표 타겟 단가({target_price_input} {selected_cur}) 맞춤형 역산 배분]
 - 사용자가 최종 도달해야 할 Target Price를 '{target_price_input} {selected_cur}'로 지정했습니다.
 - 따라서 최종 adjusted_price는 반드시 지정된 {target_price_input}에 수렴하도록 역산하십시오.
-- 협력사 제출가와 타겟단가 사이의 총 절감 필요액을 원가 요소별(재료비, 가공비, 일반관리비, 이윤, 물류비 등)로 합리적으로 배분하십시오.
-- cost_breakdown의 note 열에는 단순 기준이 아니라, "타겟 달성을 위해 C/T 5초 단축 필요(-0.25)", "관리비율 10% 강제 축소(-0.12)" 등 협력사에 요구할 구체적인 기술적 액션 플랜을 기재하세요.
+- 협력사 제출가와 타겟단가 사이의 총 절감 필요액을 원가 요소별로 합리적으로 배분하십시오.
 """
                         else:
-                            target_instruction = """
-[표준 사정 모드]
-- 당사 표준 사정 기준에 따라 과다 계상된 원가 항목을 삭감하고 합리적인 사정가를 도출하세요.
-"""
+                            target_instruction = "[표준 사정 모드] 당사 표준 사정 기준에 따라 과다 계상된 원가 항목을 삭감하고 합리적인 사정가를 도출하세요."
 
                         prompt_intro = f"""
-당신은 자동차 부품 구매팀 원가 분석 및 목표원가설계(Target Costing) 수석관입니다. 제공된 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
+당신은 자동차 소형 모터 구매팀 수석 원가 분석관입니다. 제공된 견적서 이미지를 정밀 분석하여 사정원가계산서를 작성하세요.
 [입력정보] 차종: '{in_veh}', 품번: '{in_pno}', 품명: '{in_pnm}'
 [기준통화] {selected_cur} (환율 기준: 1 {selected_cur} = {cur_rate} KRW)
 [기본 사정 기준]
@@ -423,7 +429,16 @@ with tab_main1:
 - 간접경비: 상한 {oh_r}%, 일반관리비: Min({adm_r}%, 협력사치), 영업이익: Min({prf_r}%, 협력사치)
 - 스크랩: 매각단가 {scrap_p}원/kg (복합수지 사출 분쇄불가는 투입량 전체 인정, 금속은 환입 필수)
 - 절대원칙: 총 사정단가가 협력사 제출단가보다 커지는 역전 현상 금지 (사정가 <= 제출가)
-- 통화 주의: 원본 견적서가 RMB/위안 또는 외화인 경우 제출 단가 통화 규격을 유지하여 비교하고, 필요시 환율을 명기하세요.
+
+[🚨 핵심 심사 원칙 1: 소수점 자릿수 정밀도 보존]
+- 견적서 원본에 표기된 제출단가의 소수점 자릿수를 정확히 파악하여 decimal_precision(정수면 0, 소수점 1자리 1, 2자리 2, 3자리 3)으로 반환하세요.
+- 견적서가 정수로 제출되었으면 모든 단가도 정수로, 소수점 1자리까지만 있으면 1자리까지만 표기하도록 정합성을 맞추세요.
+
+[🚨 핵심 심사 원칙 2: 재료비 산출 근거(원단가 미오픈) 강력 적발 및 경고]
+- 자동차 부품 재료비의 기본 공식은 반드시 `(재료단가 × 투입중량) - (스크랩단가 × 스크랩중량)` 이어야 합니다.
+- 만약 견적서에 원재료 단가(원/kg 등)나 투입중량/단중을 명시하지 않고 총액(금액)만 일방적으로 기재해 놓았을 경우:
+  1) cost_breakdown의 재료비 'note' 열에 "⚠️ 재료단가 및 투입/스크랩 중량 미오픈(금액 산출 근거 불투명) - 정합성 검증 불가로 상세 원가내역서 필수 징구 대상"이라고 명기할 것.
+  2) audit_comment 총평 및 네고 공문 첫 문단에 "원소재 단가 및 중량이 오픈되지 않아 재료비 적정성 판단이 불가능하므로, 원단가가 기재된 상세 을지 재제출 요구"를 강력히 포함할 것.
 
 {target_instruction}
 
@@ -432,7 +447,7 @@ with tab_main1:
                         json_format_instruction = """
 반드시 최상위가 단일 JSON Object 형태여야 합니다 (Array 금지):
 {
-  "item_info": {"vehicle_type": "", "supplier": "", "part_name": "", "part_no": "", "currency": ""},
+  "item_info": {"vehicle_type": "", "supplier": "", "part_name": "", "part_no": "", "currency": "", "decimal_precision": 0},
   "comparison": {"submitted_price": 0.0, "adjusted_price": 0.0, "cost_reduction": 0.0, "reduction_rate": 0.0},
   "cost_breakdown": [
     {"category": "", "item": "", "submitted": 0.0, "adjusted": 0.0, "diff": 0.0, "note": ""}
@@ -484,6 +499,7 @@ with tab_main1:
                             fn = in_pnm or item_info.get("part_name", "Unknown")
                             fs = item_info.get("supplier", "Unknown")
                             detected_cur = item_info.get("currency", selected_cur)
+                            dec_prec = int(item_info.get("decimal_precision", 0 if detected_cur == "KRW" else 3))
 
                             comp = data.get("comparison", {}) if isinstance(data.get("comparison"), dict) else {}
                             sub_p = float(comp.get("submitted_price", 0.0))
@@ -496,9 +512,9 @@ with tab_main1:
                                 "일자": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "차종": fv, "품번": fp, "품명": fn, "협력사": fs, "공정": selected_proc_label,
                                 "통화": detected_cur,
-                                "제출가": round(sub_p, 3),
-                                "사정(목표)가": round(adj_p, 3),
-                                "절감액": round(red_p, 3),
+                                "제출가": round(sub_p, dec_prec),
+                                "사정(목표)가": round(adj_p, dec_prec),
+                                "절감액": round(red_p, dec_prec),
                                 "절감율": round(red_r, 1)
                             }])
                             if os.path.exists(h_file):
@@ -506,11 +522,12 @@ with tab_main1:
                             else:
                                 row.to_csv(h_file, mode='w', header=True, index=False, encoding="utf-8-sig")
 
+                            # 상단 지표 카드: 원본 소수점 자릿수 동적 반영
                             m1, m2, m3, m4 = st.columns(4)
                             cur_unit = f" {detected_cur}"
-                            m1.metric(txt["sub_p"], f"{sub_p:,.3f}{cur_unit}")
-                            m2.metric(txt["adj_p"], f"{adj_p:,.3f}{cur_unit}")
-                            m3.metric(txt["diff_p"], f"-{red_p:,.3f}{cur_unit}")
+                            m1.metric(txt["sub_p"], f"{fmt_price(sub_p, dec_prec)}{cur_unit}")
+                            m2.metric(txt["adj_p"], f"{fmt_price(adj_p, dec_prec)}{cur_unit}")
+                            m3.metric(txt["diff_p"], f"-{fmt_price(red_p, dec_prec)}{cur_unit}")
                             m4.metric(txt["diff_r"], f"-{red_r:.1f}%")
 
                             st.markdown(f"#### {txt['tbl_hdr']}")
@@ -520,6 +537,10 @@ with tab_main1:
                                 if len(df.columns) >= 6:
                                     df = df.iloc[:, :6]
                                     df.columns = txt["cols"]
+                                    # 테이블 내 제출가, 사정가, 차액 열도 견적서 원본 자릿수로 깔끔하게 포맷
+                                    df[txt["cols"][2]] = df[txt["cols"][2]].apply(lambda x: fmt_price(x, dec_prec))
+                                    df[txt["cols"][3]] = df[txt["cols"][3]].apply(lambda x: fmt_price(x, dec_prec))
+                                    df[txt["cols"][4]] = df[txt["cols"][4]].apply(lambda x: fmt_price(x, dec_prec))
                                 st.dataframe(df, use_container_width=True, hide_index=True)
 
                                 st.download_button(
@@ -532,7 +553,7 @@ with tab_main1:
                             st.markdown(data.get("audit_comment", ""))
 
 # ==========================================
-# TAB 2: 2개사 견적 1:1 비교 & 체리피킹 (신규)
+# TAB 2: 2개사 견적 1:1 비교 & 체리피킹
 # ==========================================
 with tab_main2:
     st.subheader("⚔️ 협력사 2개사 견적 대조 및 체리피킹(Cherry-Picking) 최저 원가 도출")
@@ -549,7 +570,6 @@ with tab_main2:
 
     col_a, col_b = st.columns(2, gap="large")
 
-    # [A사 견적서 등록]
     with col_a:
         st.markdown("### 🏢 [업체 A] 견적서 등록")
         s_name_a = st.text_input("업체 A 이름", value="", placeholder="예: 모텍 / 업체 A")
@@ -579,7 +599,6 @@ with tab_main2:
             for i, im in enumerate(imgs_a):
                 st.image(im, caption=f"A사 Page {i+1}", use_container_width=True)
 
-    # [B사 견적서 등록]
     with col_b:
         st.markdown("### 🏢 [업체 B] 견적서 등록")
         s_name_b = st.text_input("업체 B 이름", value="", placeholder="예: ZEB / 업체 B")
@@ -640,12 +659,11 @@ with tab_main2:
 
 [핵심 분석 및 체리피킹 지침]
 1. 양사의 원가 항목(순재료비, 가공비/C/T, 일반관리비, 이윤, 포장운반비 등)을 완벽히 1:1 매칭하여 비교표를 작성하세요.
-2. 각 세부 항목별로 더 저렴한 쪽의 단가와 합리적인 근거(예: A사의 원자재 단가, B사의 빠른 C/T)를 채택하여 '체리피킹 최저단가(Best-of-Best Price)'를 산출하세요.
-3. 총 견적가 비교: A사 총액 vs B사 총액 vs 체리피킹 조합 총액을 명시하세요.
-4. 양방향 네고 공문 작성:
-   - A사용 네고 전략: B사 대비 과다하게 비싼 항목(예: 가공비, C/T 과다, 관리비율 등)을 지적하여 삭감 요구
-   - B사용 네고 전략: A사 대비 과다하게 비싼 항목(예: 재료단가, 스크랩 미환입, 물류비 등)을 지적하여 삭감 요구
-5. 언어: {txt['prompt_lang']}
+2. 재료비 산출 근거(재료단가 및 중량)가 오픈되었는지 확인하고, 미오픈된 업체가 있다면 비고란에 강력한 시정 요구를 기재하세요.
+3. 견적서 원본의 소수점 자릿수 정합성(decimal_precision)을 파악하여 반영하세요.
+4. 각 세부 항목별로 더 저렴한 쪽의 단가와 합리적인 근거를 채택하여 '체리피킹 최저단가'를 산출하세요.
+5. 양방향 네고 공문 작성 (A사 대상, B사 대상).
+6. 언어: {txt['prompt_lang']}
 
 [JSON 응답 규격]
 반드시 최상위가 단일 JSON Object 형태여야 합니다:
@@ -656,11 +674,12 @@ with tab_main2:
     "total_a": 0.0,
     "total_b": 0.0,
     "cherry_pick_total": 0.0,
-    "currency": "{selected_cur}"
+    "currency": "{selected_cur}",
+    "decimal_precision": 0
   }},
   "comparison_table": [
     {{
-      "item": "원가항목명 (예: 순재료비, 가공비)",
+      "item": "원가항목명",
       "price_a": 0.0,
       "price_b": 0.0,
       "diff": 0.0,
@@ -707,17 +726,18 @@ with tab_main2:
                         tot_b = float(summ.get("total_b", 0.0))
                         tot_cp = float(summ.get("cherry_pick_total", 0.0))
                         cur_str = f" {summ.get('currency', selected_cur)}"
+                        cmp_prec = int(summ.get("decimal_precision", 0 if selected_cur == "KRW" else 3))
 
                         sa_name = summ.get("supplier_a", "A사")
                         sb_name = summ.get("supplier_b", "B사")
 
                         st.success("🎯 2개사 견적 대조 및 체리피킹 최적가 산출 완료")
                         mc1, mc2, mc3, mc4 = st.columns(4)
-                        mc1.metric(f"🏢 {sa_name} 견적", f"{tot_a:,.3f}{cur_str}")
-                        mc2.metric(f"🏢 {sb_name} 견적", f"{tot_b:,.3f}{cur_str}")
-                        mc3.metric("🍒 체리피킹 최저단가", f"{tot_cp:,.3f}{cur_str}")
+                        mc1.metric(f"🏢 {sa_name} 견적", f"{fmt_price(tot_a, cmp_prec)}{cur_str}")
+                        mc2.metric(f"🏢 {sb_name} 견적", f"{fmt_price(tot_b, cmp_prec)}{cur_str}")
+                        mc3.metric("🍒 체리피킹 최저단가", f"{fmt_price(tot_cp, cmp_prec)}{cur_str}")
                         gap_val = min(tot_a, tot_b) - tot_cp
-                        mc4.metric("추가 절감 잠재액", f"-{gap_val:,.3f}{cur_str}")
+                        mc4.metric("추가 절감 잠재액", f"-{fmt_price(gap_val, cmp_prec)}{cur_str}")
 
                         st.markdown("#### 📋 세부 원가 항목 1:1 대조 및 체리피킹 표")
                         c_table = cmp_data.get("comparison_table", [])
@@ -726,6 +746,10 @@ with tab_main2:
                             if len(df_cmp.columns) >= 7:
                                 df_cmp = df_cmp.iloc[:, :7]
                                 df_cmp.columns = ["원가 항목", f"{sa_name} 견적", f"{sb_name} 견적", "차액 (A-B)", "채택 업체", "체리피킹 단가", "비교 분석 및 채택 사유"]
+                                df_cmp[f"{sa_name} 견적"] = df_cmp[f"{sa_name} 견적"].apply(lambda x: fmt_price(x, cmp_prec))
+                                df_cmp[f"{sb_name} 견적"] = df_cmp[f"{sb_name} 견적"].apply(lambda x: fmt_price(x, cmp_prec))
+                                df_cmp["차액 (A-B)"] = df_cmp["차액 (A-B)"].apply(lambda x: fmt_price(x, cmp_prec))
+                                df_cmp["체리피킹 단가"] = df_cmp["체리피킹 단가"].apply(lambda x: fmt_price(x, cmp_prec))
                             st.dataframe(df_cmp, use_container_width=True, hide_index=True)
 
                             st.download_button(
