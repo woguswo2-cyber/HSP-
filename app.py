@@ -458,37 +458,37 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
 
+                        # 503 및 일시적 과부하 대응: Flash 모델 시도 후 실패 시 즉시 Pro 모델로 스위칭
+                        candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
                         data = None
                         last_error = None
 
-                        for attempt in range(4):
-                            try:
-                                res = client.models.generate_content(
-                                    model="gemini-3.6-flash",
-                                    contents=parts,
-                                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                                )
-                                c_raw = res.text.strip()
-                                c_raw = re.sub(r"^```json\s*", "", c_raw)
-                                c_raw = re.sub(r"^```\s*", "", c_raw)
-                                c_raw = re.sub(r"\s*```$", "", c_raw)
-                                raw_parsed = json.loads(c_raw, strict=False)
-
-                                if isinstance(raw_parsed, list):
-                                    data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
-                                elif isinstance(raw_parsed, dict):
-                                    data = raw_parsed
-                                else:
-                                    data = {}
+                        for model_name in candidate_models:
+                            if data is not None:
                                 break
-                            except Exception as e:
-                                last_error = e
-                                err_str = str(e)
-                                if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
-                                    time.sleep(3 * (attempt + 1))
-                                    continue
-                                else:
+                            for attempt in range(2):
+                                try:
+                                    res = client.models.generate_content(
+                                        model=model_name,
+                                        contents=parts,
+                                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                                    )
+                                    c_raw = res.text.strip()
+                                    c_raw = re.sub(r"^```json\s*", "", c_raw)
+                                    c_raw = re.sub(r"^```\s*", "", c_raw)
+                                    c_raw = re.sub(r"\s*```$", "", c_raw)
+                                    raw_parsed = json.loads(c_raw, strict=False)
+
+                                    if isinstance(raw_parsed, list):
+                                        data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
+                                    elif isinstance(raw_parsed, dict):
+                                        data = raw_parsed
+                                    else:
+                                        data = {}
                                     break
+                                except Exception as e:
+                                    last_error = e
+                                    time.sleep(1.5)
 
                         if data is None:
                             st.error(f"Error: {last_error}")
@@ -522,7 +522,7 @@ with tab_main1:
                             else:
                                 row.to_csv(h_file, mode='w', header=True, index=False, encoding="utf-8-sig")
 
-                            # 상단 지표 카드: 원본 소수점 자릿수 동적 반영
+                            # 상단 지표 카드
                             m1, m2, m3, m4 = st.columns(4)
                             cur_unit = f" {detected_cur}"
                             m1.metric(txt["sub_p"], f"{fmt_price(sub_p, dec_prec)}{cur_unit}")
@@ -537,7 +537,6 @@ with tab_main1:
                                 if len(df.columns) >= 6:
                                     df = df.iloc[:, :6]
                                     df.columns = txt["cols"]
-                                    # 테이블 내 제출가, 사정가, 차액 열도 견적서 원본 자릿수로 깔끔하게 포맷
                                     df[txt["cols"][2]] = df[txt["cols"][2]].apply(lambda x: fmt_price(x, dec_prec))
                                     df[txt["cols"][3]] = df[txt["cols"][3]].apply(lambda x: fmt_price(x, dec_prec))
                                     df[txt["cols"][4]] = df[txt["cols"][4]].apply(lambda x: fmt_price(x, dec_prec))
@@ -694,29 +693,29 @@ with tab_main2:
 """
                     parts_cmp.append(prompt_cmp)
 
+                    candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
                     cmp_data = None
                     last_cmp_err = None
-                    for attempt in range(4):
-                        try:
-                            res = client.models.generate_content(
-                                model="gemini-3.6-flash",
-                                contents=parts_cmp,
-                                config=types.GenerateContentConfig(response_mime_type="application/json")
-                            )
-                            c_raw = res.text.strip()
-                            c_raw = re.sub(r"^```json\s*", "", c_raw)
-                            c_raw = re.sub(r"^```\s*", "", c_raw)
-                            c_raw = re.sub(r"\s*```$", "", c_raw)
-                            cmp_data = json.loads(c_raw, strict=False)
+
+                    for model_name in candidate_models:
+                        if cmp_data is not None:
                             break
-                        except Exception as e:
-                            last_cmp_err = e
-                            err_str = str(e)
-                            if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
-                                time.sleep(3 * (attempt + 1))
-                                continue
-                            else:
+                        for attempt in range(2):
+                            try:
+                                res = client.models.generate_content(
+                                    model=model_name,
+                                    contents=parts_cmp,
+                                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                                )
+                                c_raw = res.text.strip()
+                                c_raw = re.sub(r"^```json\s*", "", c_raw)
+                                c_raw = re.sub(r"^```\s*", "", c_raw)
+                                c_raw = re.sub(r"\s*```$", "", c_raw)
+                                cmp_data = json.loads(c_raw, strict=False)
                                 break
+                            except Exception as e:
+                                last_cmp_err = e
+                                time.sleep(1.5)
 
                     if cmp_data is None:
                         st.error(f"비교 분석 중 오류 발생: {last_cmp_err}")
