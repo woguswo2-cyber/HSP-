@@ -458,37 +458,33 @@ with tab_main1:
                         p_txt = prompt_intro + "\n" + json_format_instruction
                         parts.append(p_txt)
 
-                        # 503 및 일시적 과부하 대응: Flash 모델 시도 후 실패 시 즉시 Pro 모델로 스위칭
-                        candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
+                        # 무료 티어에서도 제한 없는 gemini-3.6-flash 단일 사용 (pro 모델 절대 배제)
                         data = None
                         last_error = None
 
-                        for model_name in candidate_models:
-                            if data is not None:
-                                break
-                            for attempt in range(2):
-                                try:
-                                    res = client.models.generate_content(
-                                        model=model_name,
-                                        contents=parts,
-                                        config=types.GenerateContentConfig(response_mime_type="application/json")
-                                    )
-                                    c_raw = res.text.strip()
-                                    c_raw = re.sub(r"^```json\s*", "", c_raw)
-                                    c_raw = re.sub(r"^```\s*", "", c_raw)
-                                    c_raw = re.sub(r"\s*```$", "", c_raw)
-                                    raw_parsed = json.loads(c_raw, strict=False)
+                        for attempt in range(4):
+                            try:
+                                res = client.models.generate_content(
+                                    model="gemini-3.6-flash",
+                                    contents=parts,
+                                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                                )
+                                c_raw = res.text.strip()
+                                c_raw = re.sub(r"^```json\s*", "", c_raw)
+                                c_raw = re.sub(r"^```\s*", "", c_raw)
+                                c_raw = re.sub(r"\s*```$", "", c_raw)
+                                raw_parsed = json.loads(c_raw, strict=False)
 
-                                    if isinstance(raw_parsed, list):
-                                        data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
-                                    elif isinstance(raw_parsed, dict):
-                                        data = raw_parsed
-                                    else:
-                                        data = {}
-                                    break
-                                except Exception as e:
-                                    last_error = e
-                                    time.sleep(1.5)
+                                if isinstance(raw_parsed, list):
+                                    data = raw_parsed[0] if len(raw_parsed) > 0 and isinstance(raw_parsed[0], dict) else {}
+                                elif isinstance(raw_parsed, dict):
+                                    data = raw_parsed
+                                else:
+                                    data = {}
+                                break
+                            except Exception as e:
+                                last_error = e
+                                time.sleep(3 * (attempt + 1))
 
                         if data is None:
                             st.error(f"Error: {last_error}")
@@ -693,29 +689,25 @@ with tab_main2:
 """
                     parts_cmp.append(prompt_cmp)
 
-                    candidate_models = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
                     cmp_data = None
                     last_cmp_err = None
 
-                    for model_name in candidate_models:
-                        if cmp_data is not None:
+                    for attempt in range(4):
+                        try:
+                            res = client.models.generate_content(
+                                model="gemini-3.6-flash",
+                                contents=parts_cmp,
+                                config=types.GenerateContentConfig(response_mime_type="application/json")
+                            )
+                            c_raw = res.text.strip()
+                            c_raw = re.sub(r"^```json\s*", "", c_raw)
+                            c_raw = re.sub(r"^```\s*", "", c_raw)
+                            c_raw = re.sub(r"\s*```$", "", c_raw)
+                            cmp_data = json.loads(c_raw, strict=False)
                             break
-                        for attempt in range(2):
-                            try:
-                                res = client.models.generate_content(
-                                    model=model_name,
-                                    contents=parts_cmp,
-                                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                                )
-                                c_raw = res.text.strip()
-                                c_raw = re.sub(r"^```json\s*", "", c_raw)
-                                c_raw = re.sub(r"^```\s*", "", c_raw)
-                                c_raw = re.sub(r"\s*```$", "", c_raw)
-                                cmp_data = json.loads(c_raw, strict=False)
-                                break
-                            except Exception as e:
-                                last_cmp_err = e
-                                time.sleep(1.5)
+                        except Exception as e:
+                            last_cmp_err = e
+                            time.sleep(3 * (attempt + 1))
 
                     if cmp_data is None:
                         st.error(f"비교 분석 중 오류 발생: {last_cmp_err}")
